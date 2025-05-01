@@ -19,18 +19,27 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
   private var channel: FlutterMethodChannel!
   private var eventChannel: FlutterEventChannel!  // Add event channel
   private var eventSink: FlutterEventSink?  // Add event sink
+  private var pluginLogger: PluginLogger?  // Logger instance
 
   // --- Logging Helper ---
   private func log(_ message: String, level: String = "info") {
-    print("NiimbotPlugin (\(level)): \(message)")
-    let logData = ["level": level, "message": message]
-    sendEvent(type: .log, data: logData)
+    pluginLogger?.log(message, level: level)
   }
 
   // --- Event Sending Helper ---
   private func sendEvent(type: PluginEventType, data: Any?) {
+    // Logs and errors are now handled by PluginLogger
+    if type == .log || type == .error {
+      // Fallback print if logger is somehow bypassed (shouldn't happen)
+      print("WARN: Log/Error event sent via sendEvent. Type: \(type.rawValue)")
+      return
+    }
+
     guard let sink = eventSink else {
-      print("WARN: EventSink is nil, cannot send event.")
+      // Cannot use logger here as sink is nil. Fallback to print.
+      print(
+        "WARN: EventSink is nil, cannot send event (\(type.rawValue)). Data: \(String(describing: data))"
+      )
       return
     }
     // EventChannel expects Any? so we send the dictionary directly.
@@ -43,7 +52,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
   }
 
   public static func register(with registrar: FlutterPluginRegistrar) {
-    print(">>>> NiimbotPlugin REGISTERING WITH REGISTRAR <<<<")
     let methodChannel = FlutterMethodChannel(
       name: "st.mnm.niimbot/printer", binaryMessenger: registrar.messenger())
     // Define Event Channel Name (ensure matches Dart constant)
@@ -61,7 +69,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
     instance.centralManager = CBCentralManager(delegate: instance, queue: nil)  // Use nil for main queue or specify a background queue
     registrar.addMethodCallDelegate(instance, channel: methodChannel)
 
-    // Initial log
     instance.log("Plugin registration complete.")
   }
 
@@ -70,16 +77,21 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
   public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink)
     -> FlutterError?
   {
-    log("EventChannel: onListen called.")
+    // Initialize the logger here, now that we have the sink
     self.eventSink = events
+    self.pluginLogger = PluginLogger(eventSink: events)
+    log("EventChannel: onListen called, PluginLogger initialized.")
+
     // Optionally send an initial state event
     sendBluetoothStateEvent()
-    return nil  // Success
+    return nil
   }
 
   public func onCancel(withArguments arguments: Any?) -> FlutterError? {
     log("EventChannel: onCancel called.")
     self.eventSink = nil
+    // Clear the logger when the sink is gone
+    self.pluginLogger = nil
     return nil  // Success
   }
 
@@ -134,7 +146,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
       guard centralManager.state == .poweredOn else {
         let errorMsg = "Bluetooth is not enabled"
         log(errorMsg, level: "error")
-        sendEvent(type: .error, data: ["code": "BLUETOOTH_DISABLED", "message": errorMsg])
         result(FlutterError(code: "BLUETOOTH_DISABLED", message: errorMsg, details: nil))
         return
       }
@@ -160,7 +171,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
       guard centralManager.state == .poweredOn else {
         let errorMsg = "Bluetooth is not enabled"
         log(errorMsg, level: "error")
-        sendEvent(type: .error, data: ["code": "BLUETOOTH_DISABLED", "message": errorMsg])
         result(FlutterError(code: "BLUETOOTH_DISABLED", message: errorMsg, details: nil))
         return
       }
@@ -172,7 +182,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
       else {
         let errorMsg = "Invalid arguments: Expected map with 'address' (UUID string)"
         log(errorMsg, level: "error")
-        sendEvent(type: .error, data: ["code": "INVALID_ARGUMENT", "message": errorMsg])
         result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
         return
       }
@@ -202,9 +211,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
           // Might need to scan first if the peripheral isn't known or discovered
           let errorMsg = "Peripheral not found. Scan first."
           log(errorMsg, level: "warn")
-          sendEvent(
-            type: .connectionState,
-            data: ["status": "error", "deviceId": deviceUUID.uuidString, "message": errorMsg])
           pendingConnectResult?(
             FlutterError(code: "NOT_FOUND", message: errorMsg, details: nil))
           pendingConnectResult = nil
@@ -217,18 +223,32 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
       else {
         let errorMsg = "Printer not connected"
         log(errorMsg, level: "error")
-        sendEvent(type: .error, data: ["code": "NOT_CONNECTED", "message": errorMsg])
         result(FlutterError(code: "NOT_CONNECTED", message: errorMsg, details: nil))
         return
       }
-      guard let args = call.arguments as? [String: Any],
-        let bytesFlutter = args["bytes"] as? FlutterStandardTypedData,
-        let width = args["width"] as? Int,
-        let height = args["height"] as? Int
-      else {
-        let errorMsg = "Invalid arguments for send"
+
+      // Argument validation with specific error messages
+      guard let args = call.arguments as? [String: Any] else {
+        let errorMsg = "Invalid arguments: Expected a dictionary."
         log(errorMsg, level: "error")
-        sendEvent(type: .error, data: ["code": "INVALID_ARGUMENT", "message": errorMsg])
+        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
+        return
+      }
+      guard let bytesFlutter = args["bytes"] as? FlutterStandardTypedData else {
+        let errorMsg = "Invalid 'bytes' argument: Expected FlutterStandardTypedData."
+        log(errorMsg, level: "error")
+        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
+        return
+      }
+      guard let width = args["width"] as? Int else {
+        let errorMsg = "Invalid 'width' argument: Expected Int."
+        log(errorMsg, level: "error")
+        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
+        return
+      }
+      guard let height = args["height"] as? Int else {
+        let errorMsg = "Invalid 'height' argument: Expected Int."
+        log(errorMsg, level: "error")
         result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
         return
       }
@@ -246,7 +266,6 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
       guard let image = createImageFromBytes(bytes: bytes, width: width, height: height) else {
         let errorMsg = "Could not create image from provided bytes"
         log(errorMsg, level: "error")
-        sendEvent(type: .error, data: ["code": "IMAGE_CREATION_FAILED", "message": errorMsg])
         result(FlutterError(code: "IMAGE_CREATION_FAILED", message: errorMsg, details: nil))
         return
       }
@@ -506,11 +525,25 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
         type: .scanResult, data: ["status": "stopped", "reason": "Connected to peripheral"])
     }
 
-    // Clear discovered list? Optional.
-    // discoveredPeripherals.removeAll()
+    // Ensure logger is available before creating the actor
+    guard let logger = self.pluginLogger else {
+      log(
+        "Error: Cannot initialize NiimbotPrinter, logger not ready (event channel listener might not be attached yet).",
+        level: "error")
+      centralManager.cancelPeripheralConnection(peripheral)  // Disconnect if logger isn't ready
+      pendingConnectResult?(
+        FlutterError(code: "INTERNAL_ERROR", message: "Logger not initialized", details: nil))
+      pendingConnectResult = nil
+      // Send error state? Connection failed essentially.
+      sendEvent(
+        type: .connectionState,
+        data: ["status": "error", "deviceId": deviceId, "message": "Logger not initialized"])
+      return
+    }
 
     connectedPeripheral = peripheral  // Confirm connection *now*
-    niimbotPrinter = NiimbotPrinter(peripheral: peripheral)
+    // Pass the logger instance to the actor's initializer
+    niimbotPrinter = NiimbotPrinter(peripheral: peripheral, logger: logger)
     // niimbotPrinter?.delegate = self  // <<< REMOVE THIS LINE (Actor has no delegate)
 
     // Discover services and characteristics (asynchronously)

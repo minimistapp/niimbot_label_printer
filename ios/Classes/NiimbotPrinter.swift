@@ -94,6 +94,9 @@ actor NiimbotPrinter {
   private var writeCharacteristic: CBCharacteristic?
   private var notifyCharacteristic: CBCharacteristic?
 
+  // Logger instance - non-optional, injected
+  private let logger: PluginLogger
+
   // State for managing command responses - Managed by Command Queue
   private var commandQueue: [QueuedCommand] = []
   private var isProcessingCommand: Bool = false
@@ -103,14 +106,16 @@ actor NiimbotPrinter {
   weak var delegate: NiimbotPrinterDelegate?
 
   // MARK: - Initialization & Setup
-  init(peripheral: CBPeripheral) {
+  init(peripheral: CBPeripheral, logger: PluginLogger) {
     self.peripheral = peripheral
+    self.logger = logger
+    logger.log("NiimbotPrinter Actor initialized for peripheral \(peripheral.identifier).")
     // Delegate setting and service discovery are handled externally by NiimbotPlugin
   }
 
   // Call this externally after discovering characteristics
   func setCharacteristics(write: CBCharacteristic, notify: CBCharacteristic) {
-    print("NiimbotPrinter Actor: Setting characteristics")
+    logger.log("NiimbotPrinter Actor: Setting characteristics")
     self.writeCharacteristic = write
     self.notifyCharacteristic = notify
     // TODO: Consider enabling notifications here if not done elsewhere?
@@ -174,9 +179,9 @@ actor NiimbotPrinter {
   }
 
   func endPagePrint() async throws -> Bool {
-    print("Queueing endPagePrint (0xE3)...")
+    logger.log("Queueing endPagePrint (0xE3)...")
     let responseData = try await enqueueCommand(requestCode: .endPagePrint, data: Data([1]))  // Assume default offset
-    print("endPagePrint command completed.")
+    logger.log("endPagePrint command completed.")
     guard !responseData.isEmpty else {
       throw NiimbotError.parsingFailed(
         operation: "endPagePrint", reason: "Empty data in response", data: responseData)
@@ -185,7 +190,8 @@ actor NiimbotPrinter {
   }
 
   func allowPrintClear() async throws -> Bool {
-    print("Warning: allowPrintClear might not be supported/needed on all models.")
+    logger.log(
+      "Warning: allowPrintClear might not be supported/needed on all models.", level: "warn")
     let responseData = try await enqueueCommand(
       requestCode: .allowPrintClear, data: Data([1]), responseOffset: 16)
     guard !responseData.isEmpty else {
@@ -208,7 +214,7 @@ actor NiimbotPrinter {
   }
 
   func setQuantity(_ n: Int) async throws -> Bool {
-    print("Warning: setQuantity might not be supported/needed on all models.")
+    logger.log("Warning: setQuantity might not be supported/needed on all models.", level: "warn")
     let data = UInt16(n).bigEndianData
     let responseData = try await enqueueCommand(requestCode: .setQuantity, data: data)  // Assume default offset
     guard !responseData.isEmpty else {
@@ -418,7 +424,7 @@ actor NiimbotPrinter {
     // Or handle setup commands individually first?
     // Let's enqueue setup commands first, then handle image data sending.
 
-    print("NiimbotPrinter Actor: Queueing printBitmap sequence...")
+    logger.log("NiimbotPrinter Actor: Queueing printBitmap sequence...")
 
     // Enqueue setup commands - they will run sequentially due to the queue
     _ = try await setLabelDensity(density)
@@ -439,12 +445,12 @@ actor NiimbotPrinter {
     // --- Send Image Data (Not part of standard request/response queue) ---
     // Image data packets don't expect individual responses matching the request code
     // We send them using sendRawCommand which uses writeWithoutResponse
-    print("NiimbotPrinter Actor: Sending image data (\(imageWidth)x\(imageHeight))...")
+    logger.log("NiimbotPrinter Actor: Sending image data (\(imageWidth)x\(imageHeight))...")
     let imagePackets = encodeImage(imageToPrint)
     for packet in imagePackets {
       await sendRawCommand(packet: packet)
     }
-    print("NiimbotPrinter Actor: Finished sending image packets.")
+    logger.log("NiimbotPrinter Actor: Finished sending image packets.")
     // --- End Image Data ---
 
     // Enqueue final commands
@@ -454,11 +460,11 @@ actor NiimbotPrinter {
     // Option 1: Enqueue getPrintStatus repeatedly? Might block queue.
     // Option 2: Perform polling outside the strict command queue?
     // Let's try Option 2 for now, but it breaks strict sequencing guarantee.
-    print("NiimbotPrinter Actor: Polling print status (outside strict queue)...")
+    logger.log("NiimbotPrinter Actor: Polling print status (outside strict queue)...")
     try await pollPrintStatus(expectedQuantity: quantity)
 
     _ = try await endPrint()  // Enqueue final command
-    print("NiimbotPrinter Actor: Print sequence fully queued/completed.")
+    logger.log("NiimbotPrinter Actor: Print sequence fully queued/completed.")
   }
 
   // Helper for polling status (non-queued)
@@ -469,26 +475,28 @@ actor NiimbotPrinter {
 
     while pollingAttempts < maxPollingAttempts {
       pollingAttempts += 1
-      print("Polling attempt \(pollingAttempts)/\(maxPollingAttempts)...")
+      logger.log("Polling attempt \(pollingAttempts)/\(maxPollingAttempts)...")
       // We need to call the *public* getPrintStatus which uses the queue
       do {
         let status = try await getPrintStatus()  // This will now queue correctly
         printedPages = status["page"] ?? 0
-        print("Current status: page=\(printedPages)/\(expectedQuantity)")
+        logger.log("Current status: page=\(printedPages)/\(expectedQuantity)")
         pollingAttempts += 1  // Increment only on successful status check?
         if printedPages >= expectedQuantity {
-          print("Polling: Printing completed.")
+          logger.log("Polling: Printing completed.")
           return  // Success
         }
       } catch let error {
         // Use if-case to check for specific error type
         if case NiimbotError.responseTimeout = error {
-          print("Warning: Timeout polling print status, retrying...")
+          logger.log("Warning: Timeout polling print status, retrying...", level: "warn")
           // No increment on timeout? Or increment anyway?
           // Let's increment to avoid infinite loops on persistent timeouts.
           pollingAttempts += 1
         } else {
-          print("Error polling print status: \(error.localizedDescription). Aborting wait.")
+          logger.log(
+            "Error polling print status: \(error.localizedDescription). Aborting wait.",
+            level: "error")
           throw error  // Rethrow other errors
         }
       }
@@ -497,8 +505,9 @@ actor NiimbotPrinter {
     }
 
     // If loop finishes without completion
-    print(
-      "Warning: Polling finished, but reported pages (\(printedPages)) < requested quantity (\(expectedQuantity))."
+    logger.log(
+      "Warning: Polling finished, but reported pages (\(printedPages)) < requested quantity (\(expectedQuantity)).",
+      level: "warn"
     )
     // Consider throwing an error here if strict confirmation is needed
     // throw NiimbotError.commandFailed("Print status polling did not confirm completion")
@@ -520,19 +529,20 @@ actor NiimbotPrinter {
       )
       // Add to queue and trigger processing
       commandQueue.append(command)
-      print("Command \(requestCode) enqueued. Queue size: \(commandQueue.count)")
+      logger.log("Command \(requestCode) enqueued. Queue size: \(commandQueue.count)")
       Task { await self._processNextCommand() }  // Trigger processing asynchronously
     }
   }
 
   private func _processNextCommand() {
     guard !isProcessingCommand else {
-      print(
-        "Queue: Already processing command \(currentCommand?.requestCode ?? .getInfo), skipping.")
+      logger.log(
+        "Queue: Already processing command \(currentCommand?.requestCode.rawValue ?? 0), skipping.",
+        level: "debug")
       return  // Already processing
     }
     guard !commandQueue.isEmpty else {
-      print("Queue: Empty, nothing to process.")
+      logger.log("Queue: Empty, nothing to process.", level: "debug")
       isProcessingCommand = false  // Ensure flag is false if queue is empty
       return  // No commands to process
     }
@@ -540,13 +550,13 @@ actor NiimbotPrinter {
     isProcessingCommand = true
     var commandToProcess = commandQueue.removeFirst()
     currentCommand = commandToProcess  // Track current command
-    print(
+    logger.log(
       "Queue: Dequeuing command \(commandToProcess.requestCode). Remaining: \(commandQueue.count)")
 
     guard let peripheral = peripheral, let characteristic = writeCharacteristic else {
-      print(
-        "Error: Peripheral or characteristic unavailable for processing command \(commandToProcess.requestCode)"
-      )
+      logger.log(
+        "Error: Peripheral or characteristic unavailable for processing command \(commandToProcess.requestCode)",
+        level: "error")
       commandToProcess.continuation.resume(throwing: NiimbotError.notConnected)
       _finishProcessingCommand(errorOccurred: true)
       return
@@ -555,7 +565,7 @@ actor NiimbotPrinter {
     let packet = createPacket(type: commandToProcess.requestCode, data: commandToProcess.data)
     let expectedResponseCode =
       commandToProcess.requestCode.rawValue + UInt8(commandToProcess.responseOffset)
-    print(
+    logger.log(
       "Queue: Sending command: \(commandToProcess.requestCode) (0x\(String(commandToProcess.requestCode.rawValue, radix: 16))), expecting response: 0x\(String(expectedResponseCode, radix: 16))"
     )
 
@@ -566,15 +576,15 @@ actor NiimbotPrinter {
 
       // Timeout occurred - check if it's still for the *current* command being processed
       if self.currentCommand?.id == commandToProcess.id {
-        print(
-          "Error: Timeout waiting for response 0x\(String(expectedResponseCode, radix: 16)) for command \(commandToProcess.requestCode)"
-        )
+        logger.log(
+          "Error: Timeout waiting for response 0x\(String(expectedResponseCode, radix: 16)) for command \(commandToProcess.requestCode)",
+          level: "error")
         commandToProcess.continuation.resume(throwing: NiimbotError.responseTimeout)
         self._finishProcessingCommand(errorOccurred: true)
       } else {
-        print(
-          "Warning: Timeout fired for command \(commandToProcess.requestCode), but it was no longer the current command. Ignoring timeout."
-        )
+        logger.log(
+          "Warning: Timeout fired for command \(commandToProcess.requestCode), but it was no longer the current command. Ignoring timeout.",
+          level: "warn")
       }
     }
 
@@ -590,9 +600,9 @@ actor NiimbotPrinter {
 
   // Helper to clean up after a command finishes (success, error, or timeout)
   private func _finishProcessingCommand(errorOccurred: Bool) {
-    print(
-      "Queue: Finishing command \(currentCommand?.requestCode ?? .getInfo). Error: \(errorOccurred)"
-    )
+    logger.log(
+      "Queue: Finishing command \(currentCommand?.requestCode.rawValue ?? 0). Error: \(errorOccurred)",
+      level: "debug")
     currentCommand?.timeoutTask?.cancel()  // Cancel timeout if not already fired
     currentCommand = nil
     isProcessingCommand = false
@@ -615,28 +625,29 @@ actor NiimbotPrinter {
 
   private func handleResponse(data: Data?, error: Error?) {
     guard let commandInProgress = currentCommand else {
-      print(
-        "Warning: Received response data/error but no command was being processed. Data: \(data?.hexEncodedString() ?? "nil"), Error: \(error?.localizedDescription ?? "nil")"
-      )
+      logger.log(
+        "Warning: Received response data/error but no command was being processed. Data: \(data?.hexEncodedString() ?? "nil"), Error: \(error?.localizedDescription ?? "nil")",
+        level: "warn")
       return
     }
 
-    print(
-      "Queue: Handling response for command \(commandInProgress.requestCode). Error: \(error != nil)"
-    )
+    logger.log(
+      "Queue: Handling response for command \(commandInProgress.requestCode). Error: \(error != nil)",
+      level: "debug")
 
     // Cancel the timeout task as we received a response or write error
     // commandInProgress.timeoutTask?.cancel() // This is now done in _finishProcessingCommand
 
     if let error = error {
-      print("Error received in response handler: \(error.localizedDescription)")
+      logger.log(
+        "Error received in response handler: \(error.localizedDescription)", level: "error")
       commandInProgress.continuation.resume(throwing: error)
       _finishProcessingCommand(errorOccurred: true)
       return
     }
 
     guard let responseData = data else {
-      print("Error: Response handler received nil data and nil error.")
+      logger.log("Error: Response handler received nil data and nil error.", level: "error")
       commandInProgress.continuation.resume(
         throwing: NiimbotError.parsingFailed(
           operation: "handleResponse", reason: "Received nil data"))
@@ -645,9 +656,9 @@ actor NiimbotPrinter {
     }
 
     guard let responsePacket = NiimbotPacket.fromBytes(data: responseData) else {
-      print(
-        "Error: Failed to parse received data into NiimbotPacket. Data: \(responseData.hexEncodedString())"
-      )
+      logger.log(
+        "Error: Failed to parse received data into NiimbotPacket. Data: \(responseData.hexEncodedString())",
+        level: "error")
       commandInProgress.continuation.resume(
         throwing: NiimbotError.parsingFailed(
           operation: "handleResponse", reason: "Failed to parse packet structure/checksum",
@@ -658,28 +669,28 @@ actor NiimbotPrinter {
 
     let expectedResponseCode =
       commandInProgress.requestCode.rawValue + UInt8(commandInProgress.responseOffset)
-    print(
-      "Received response packet: Type=0x\(String(responsePacket.type, radix: 16)), Expected=0x\(String(expectedResponseCode, radix: 16))"
-    )
+    logger.log(
+      "Received response packet: Type=0x\(String(responsePacket.type, radix: 16)), Expected=0x\(String(expectedResponseCode, radix: 16))",
+      level: "debug")
 
     if responsePacket.type == expectedResponseCode {
       commandInProgress.continuation.resume(returning: responsePacket.data)
       _finishProcessingCommand(errorOccurred: false)
     } else if responsePacket.type == 219 {  // Specific error code 0xDB
-      print("Error: Printer returned specific error code 219 (0xDB)")
+      logger.log("Error: Printer returned specific error code 219 (0xDB)", level: "error")
       commandInProgress.continuation.resume(
         throwing: NiimbotError.commandFailed("Printer error code 0xDB"))
       _finishProcessingCommand(errorOccurred: true)
     } else if responsePacket.type == 0 {  // Another potential error/status?
-      print("Warning: Received packet type 0")
+      logger.log("Warning: Received packet type 0", level: "warn")
       commandInProgress.continuation.resume(
         throwing: NiimbotError.parsingFailed(
           operation: "handleResponse", reason: "Received packet type 0", data: responseData))
       _finishProcessingCommand(errorOccurred: true)
     } else {
-      print(
-        "Error: Received packet type 0x\(String(responsePacket.type, radix: 16)) did not match expected 0x\(String(expectedResponseCode, radix: 16))"
-      )
+      logger.log(
+        "Error: Received packet type 0x\(String(responsePacket.type, radix: 16)) did not match expected 0x\(String(expectedResponseCode, radix: 16))",
+        level: "error")
       commandInProgress.continuation.resume(
         throwing: NiimbotError.parsingFailed(
           operation: "handleResponse",
@@ -696,20 +707,21 @@ actor NiimbotPrinter {
     // This confirmation might be useful if we implement flow control for
     // .withoutResponse writes (like image data) in the future.
     if let error = error {
-      print("Warning: Received write error confirmation: \(error.localizedDescription)")
+      logger.log(
+        "Warning: Received write error confirmation: \(error.localizedDescription)", level: "warn")
       // Should we fail the current command here too?
       if let commandInProgress = currentCommand {
         // Maybe only fail if the primary response hasn't arrived yet?
         // This needs careful consideration of CoreBluetooth timing.
-        print(
-          "Error during write confirmation for command \(commandInProgress.requestCode). Failing command."
-        )
+        logger.log(
+          "Error during write confirmation for command \(commandInProgress.requestCode). Failing command.",
+          level: "error")
         commandInProgress.continuation.resume(throwing: error)
         _finishProcessingCommand(errorOccurred: true)
       }
     } else {
       // Write acknowledged by BLE stack. Doesn't mean command succeeded.
-      // print("Write acknowledged for characteristic.")
+      logger.log("Write acknowledged for characteristic.", level: "debug")
     }
   }
 
@@ -740,12 +752,12 @@ actor NiimbotPrinter {
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow,
         space: colorSpace, bitmapInfo: bitmapInfo.rawValue)
     else {
-      print("Error: Could not create CGContext for ARGB conversion")
+      logger.log("Error: Could not create CGContext for ARGB conversion", level: "error")
       return nil
     }
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
     guard let outputCGImage = context.makeImage() else {
-      print("Error: Could not make image from context")
+      logger.log("Error: Could not make image from context", level: "error")
       return nil
     }
     return UIImage(cgImage: outputCGImage)
@@ -789,13 +801,15 @@ actor NiimbotPrinter {
     let height = cgImage.height
     guard let pixelData = cgImage.dataProvider?.data, let dataPtr = CFDataGetBytePtr(pixelData)
     else {
-      print("Error: Could not get pixel data")
+      logger.log("Error: Could not get pixel data", level: "error")
       return []
     }
     let bytesPerPixel = cgImage.bitsPerPixel / 8
     let bytesPerRow = cgImage.bytesPerRow
     var packets: [Data] = []
-    print("Encoding image: \(width)x\(height), bpp: \(bytesPerPixel), stride: \(bytesPerRow)")
+    logger.log(
+      "Encoding image: \(width)x\(height), bpp: \(bytesPerPixel), stride: \(bytesPerRow)",
+      level: "debug")
     for y in 0..<height {
       var lineData = Data(repeating: 0, count: (width + 7) / 8)
       for x in 0..<width {
@@ -830,7 +844,7 @@ actor NiimbotPrinter {
   // MARK: - Disconnect & Cleanup
   // Needs to be callable externally, potentially nonisolated
   func cleanup() {
-    print("NiimbotPrinter Actor: Cleaning up...")
+    logger.log("NiimbotPrinter Actor: Cleaning up...")
     // Cancel all pending commands
     for command in commandQueue {
       command.timeoutTask?.cancel()
@@ -851,16 +865,17 @@ actor NiimbotPrinter {
     peripheral = nil
     writeCharacteristic = nil
     notifyCharacteristic = nil
-    print("NiimbotPrinter Actor cleaned up.")
+    logger.log("NiimbotPrinter Actor cleaned up.")
   }
 
   // Define sendRawCommand within the actor
   private func sendRawCommand(packet: Data) {  // Not async needed if just writing
     guard let peripheral = peripheral, let characteristic = writeCharacteristic else {
-      print("Error: Cannot send raw command, peripheral or characteristic unavailable.")
+      logger.log(
+        "Error: Cannot send raw command, peripheral or characteristic unavailable.", level: "error")
       return
     }
-    // print("Sending raw packet: \(packet.hexEncodedString())")
+    // logger.log("Sending raw packet: \(packet.hexEncodedString())", level: "debug") // Optional verbose log
     peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
     // Note: No explicit delay here now. Rely on BLE stack backpressure or implement
     // peripheralIsReady(toSendWriteWithoutResponse:) handling if needed.

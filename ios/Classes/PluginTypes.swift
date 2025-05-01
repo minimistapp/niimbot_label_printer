@@ -91,19 +91,15 @@ struct AnyCodable: Encodable {
     else if let dictValue = value as? [String: Any] {
       // Requires custom encoding logic or JSONSerialization
       // For simplicity, we'll try encoding as a string representation or fail
-      print("Warning: Encoding [String: Any] in AnyCodable is limited. Consider JSON.")
       try container.encode("Dictionary: \(dictValue.count) items")  // Placeholder
     }
     // Fallback for arrays with Any value
     else if let arrayValue = value as? [Any] {
-      print("Warning: Encoding [Any] in AnyCodable is limited. Consider JSON.")
       try container.encode("Array: \(arrayValue.count) items")  // Placeholder
     }
     // TODO: Add more types or use JSONSerialization for robust encoding
     else {
       // Attempt to encode nil if it's an actual nil or unsupported type
-      print(
-        "Warning: AnyCodable encountered an unsupported type: \(type(of: value)). Encoding as nil.")
       try container.encodeNil()
     }
   }

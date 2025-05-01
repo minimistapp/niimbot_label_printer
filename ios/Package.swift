@@ -4,19 +4,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "niimbot_label_printer",
+    name: "niimbot",
     platforms: [
         .iOS(.v12)
     ],
     products: [
-        .library(name: "niimbot_label_printer", targets: ["niimbot_label_printer"])
+        .library(name: "niimbot", targets: ["niimbot"])
     ],
     dependencies: [
 
     ],
     targets: [
         .target(
-            name: "niimbot_label_printer",
+            name: "niimbot",
             dependencies: [],
             resources: [],
             publicHeadersPath: "",
