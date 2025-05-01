@@ -1,6 +1,6 @@
-# NiimbotLabelPrinter
+# Niimbot SDK
 
-`NiimbotLabelPrinter` is a Flutter package that enables printing labels using Niimbot label printers. This package provides a simple interface to connect to a Niimbot printer via Bluetooth, manage connections, and send print data.
+`Niimbot` is a Flutter package that enables printing labels using Niimbot label printers. This package provides a simple interface to connect to a Niimbot printer via Bluetooth, manage connections, and send print data.
 
 ## Features
 
@@ -12,11 +12,11 @@
 
 ## Installation
 
-Add `niimbot_label_printer` to your `pubspec.yaml`:
+Add `niimbot` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  niimbot_label_printer: ^0.0.1
+  niimbot: ^0.1.0
 ```
 
 ## Usage

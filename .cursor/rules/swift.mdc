@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+In Swift, this is a spurious warning: "No such module 'Flutter'".
