@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:ui';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:niimbot_label_printer/niimbot_label_printer.dart';
-import 'package:niimbot_label_printer_example/custom_canvas_widget.dart';
+import 'package:niimbot/niimbot.dart';
+import 'package:niimbot_example/custom_canvas_widget.dart';
 
 void main() {
   runApp(const Apps());
@@ -40,7 +39,7 @@ class _MyAppState extends State<MyApp> {
   int labelType = 1; // 1 and 3
 
   String _msj = 'Unknown';
-  final NiimbotLabelPrinter _niimbotLabelPrinterPlugin = NiimbotLabelPrinter();
+  final NiimbotPlugin _niimbotPlugin = NiimbotPlugin();
   List<BluetoothDevice> _devices = [];
   String macConnection = '';
   bool connecting = false;
@@ -75,32 +74,32 @@ class _MyAppState extends State<MyApp> {
             onSelected: (String value) async {
               switch (value) {
                 case "permission_is_granted":
-                  final bool result = await _niimbotLabelPrinterPlugin.requestPermissionGrant();
+                  final bool result = await _niimbotPlugin.isBluetoothPermissionGranted();
                   setState(() {
                     _msj = result ? 'Permission is granted' : 'Permission is not granted';
                   });
                   break;
                 case "bluetooth_is_enabled":
-                  final bool result = await _niimbotLabelPrinterPlugin.bluetoothIsEnabled();
+                  final bool result = await _niimbotPlugin.isBluetoothEnabled();
                   setState(() {
                     _msj = result ? 'Bluetooth is enabled' : 'Bluetooth is not enabled';
                   });
                   break;
                 case "is_connected":
-                  final bool result = await _niimbotLabelPrinterPlugin.isConnected();
+                  final bool result = await _niimbotPlugin.isConnected();
                   setState(() {
                     _msj = result ? 'Bluetooth is connected' : 'Bluetooth is not connected';
                   });
                   break;
                 case "get_paired_devices":
-                  final List<BluetoothDevice> result = await _niimbotLabelPrinterPlugin.getPairedDevices();
+                  final List<BluetoothDevice> result = await _niimbotPlugin.getPairedDevices();
                   _devices = result;
                   setState(() {
                     _msj = "Devices ${result.length}";
                   });
                   break;
                 case "disconnect":
-                  final bool result = await _niimbotLabelPrinterPlugin.disconnect();
+                  final bool result = await _niimbotPlugin.disconnect();
                   setState(() {
                     _msj = result ? 'Disconnected' : 'Not disconnected';
                   });
@@ -214,7 +213,7 @@ class _MyAppState extends State<MyApp> {
                         ),
                         ElevatedButton(
                           onPressed: () async {
-                            final bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
+                            final bool isConnected = await _niimbotPlugin.isConnected();
                             if (!isConnected) {
                               setState(() {
                                 _msj = 'Not connected';
@@ -236,12 +235,13 @@ class _MyAppState extends State<MyApp> {
                               "labelType": labelType,
                             };
                             PrintData printData = PrintData.fromMap(datosImagen);
-                            final bool result = await _niimbotLabelPrinterPlugin.send(printData);
+                            final bool result = await _niimbotPlugin.send(printData);
                             setState(() {
                               _msj = result ? 'Printed' : 'Not printed';
                             });
                           },
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                           child: const Text('Print image', style: TextStyle(color: Colors.white)),
                         ),
                       ],
@@ -269,7 +269,7 @@ class _MyAppState extends State<MyApp> {
                           connecting = true;
                           macConnection = device.address;
                         });
-                        bool result = await _niimbotLabelPrinterPlugin.connect(device);
+                        bool result = await _niimbotPlugin.connect(device);
                         setState(() {
                           _msj = result ? 'Connected' : 'Not connected';
                           macConnection = device.address;
@@ -311,7 +311,8 @@ class _MyAppState extends State<MyApp> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text("Donate in PayPal", textAlign: TextAlign.center, style: TextStyle(fontSize: 20, color: Colors.black)),
+                            const Text("Donate in PayPal",
+                                textAlign: TextAlign.center, style: TextStyle(fontSize: 20, color: Colors.black)),
                             IconButton(
                               onPressed: () {
                                 Navigator.pop(context);
@@ -417,7 +418,8 @@ class _MyAppState extends State<MyApp> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text("Size label to print", style: TextStyle(fontSize: 8)),
-                              const Text("The image can be created with a specific size and rotated before printing.", style: TextStyle(fontSize: 8)),
+                              const Text("The image can be created with a specific size and rotated before printing.",
+                                  style: TextStyle(fontSize: 8)),
                               Row(
                                 children: [
                                   SizedBox(
@@ -454,7 +456,8 @@ class _MyAppState extends State<MyApp> {
                                   );
                                   if (context.mounted) Navigator.pop(context);
                                 },
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                                 child: const Text('Create image', style: TextStyle(color: Colors.white)),
                               ),
                             ],

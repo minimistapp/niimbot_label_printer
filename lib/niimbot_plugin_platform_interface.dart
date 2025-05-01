@@ -60,4 +60,11 @@ abstract class NiimbotPluginPlatform extends PlatformInterface {
   Future<bool> send(PrintData data) {
     throw UnimplementedError('send() has not been implemented.');
   }
+
+  /// Provides a stream of events from the native side.
+  ///
+  /// Events can include log messages, Bluetooth status updates, scan results, etc.
+  Stream<dynamic> get events {
+    throw UnimplementedError('events stream has not been implemented.');
+  }
 }

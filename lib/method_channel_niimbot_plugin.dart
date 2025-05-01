@@ -9,6 +9,13 @@ class MethodChannelNiimbotPlugin extends NiimbotPluginPlatform {
   @visibleForTesting
   final methodChannel = const MethodChannel(Constants.niimbotPluginChannelName);
 
+  /// The event channel used to receive events from the native platform.
+  @visibleForTesting
+  final eventChannel = const EventChannel(Constants.niimbotPluginEventChannelName);
+
+  // Cached stream
+  Stream<dynamic>? _eventStream;
+
   @override
   Future<String?> getPlatformVersion() async {
     final version = await methodChannel.invokeMethod<String>('getPlatformVersion');
@@ -36,7 +43,7 @@ class MethodChannelNiimbotPlugin extends NiimbotPluginPlatform {
   @override
   Future<List<BluetoothDevice>> getPairedDevices() async {
     final result = await methodChannel.invokeMethod<List<Object?>>('getPairedDevices');
-    return result?.map((r) => BluetoothDevice.fromString(r.toString())).toList() ?? [];
+    return result?.map((deviceMap) => BluetoothDevice.fromMap(Map<String, dynamic>.from(deviceMap as Map))).toList() ?? [];
   }
 
   @override
@@ -55,5 +62,11 @@ class MethodChannelNiimbotPlugin extends NiimbotPluginPlatform {
   Future<bool> send(PrintData data) async {
     final result = await methodChannel.invokeMethod<bool>('send', data.toMap());
     return result ?? false;
+  }
+
+  @override
+  Stream<dynamic> get events {
+    _eventStream ??= eventChannel.receiveBroadcastStream();
+    return _eventStream!;
   }
 }

@@ -87,7 +87,8 @@ class _CustomQRPainter extends CustomPainter {
       final textInfo = textList[i];
       textPainter.text = TextSpan(
         text: textInfo.text,
-        style: TextStyle(fontSize: textInfo.fontSize, color: Colors.black, fontWeight: textInfo.isBold ? FontWeight.w800 : FontWeight.normal),
+        style:
+            TextStyle(fontSize: textInfo.fontSize, color: Colors.black, fontWeight: textInfo.isBold ? FontWeight.w800 : FontWeight.normal),
       );
       textPainter.layout();
 
