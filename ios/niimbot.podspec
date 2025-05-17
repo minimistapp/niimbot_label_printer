@@ -10,16 +10,16 @@ A Flutter plugin to interact with Niimbot label printers using the native iOS SD
   s.author           = { 'Henrik Feldt' => 'henrik@mnm.st' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
-  s.public_header_files = 'Headers/JCAPI.h', 'Headers/JCYMYModels.h'
-
-  s.static_framework = true
-
-  # Point to the custom module map for the SDK headers.
-  # s.module_map = 'Headers/niimbot.modulemap' # Removed, will use OTHER_CFLAGS
 
   # The SDK headers themselves are part of the module defined by the module map.
   # They don't need to be public_header_files of the `niimbot` swift module.
-  # s.public_header_files = 'Headers/JCAPI.h', 'Headers/JCYMYModels.h' # Removed
+  # s.public_header_files = 'Headers/JCAPI.h', 'Headers/JCYMYModels.h' # Now actually commented out
+
+  s.static_framework = true
+
+  # Removed, will use OTHER_CFLAGS
+  # s.module_map = 'Headers/niimbot.modulemap'
+
   # It's better to ensure the `Headers` directory is copied to a place where the module map can find it.
   # `s.preserve_paths` can ensure the Headers directory (containing .h and .modulemap) is available.
   s.preserve_paths = 'Headers/**/*', 'libs/*'
