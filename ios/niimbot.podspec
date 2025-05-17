@@ -15,7 +15,7 @@ A Flutter plugin to interact with Niimbot label printers using the native iOS SD
   # They don't need to be public_header_files of the `niimbot` swift module.
   # s.public_header_files = 'Headers/JCAPI.h', 'Headers/JCYMYModels.h' # Now actually commented out
 
-  s.static_framework = true
+  s.static_framework = false # Temporarily changed for diagnostics
 
   # Removed, will use OTHER_CFLAGS
   # s.module_map = 'Headers/niimbot.modulemap'
