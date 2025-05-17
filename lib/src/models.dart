@@ -29,7 +29,7 @@ class BluetoothDevice {
 }
 
 class PrintData {
-  late List<int> data;
+  late Uint8List bytes;
   late int width;
   late int height;
   late bool rotate;
@@ -38,7 +38,7 @@ class PrintData {
   late int labelType;
 
   PrintData({
-    required this.data,
+    required this.bytes,
     required this.width,
     required this.height,
     required this.rotate,
@@ -48,7 +48,7 @@ class PrintData {
   });
 
   PrintData.fromMap(Map<String, dynamic> map) {
-    data = map['bytes'];
+    bytes = map['bytes'];
     width = map['width'];
     height = map['height'];
     rotate = map['rotate'];
@@ -58,11 +58,6 @@ class PrintData {
   }
 
   Map<String, dynamic> toMap() {
-    List<int> bytes = data;
-    // Trasform bytes to Uint8List if necessary
-    if (bytes.runtimeType == Uint8List) {
-      bytes = bytes.toList();
-    }
     return {
       'bytes': bytes,
       'width': width,

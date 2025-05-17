@@ -1,0 +1,8 @@
+module NiimbotObjCSDK {
+    umbrella header "JCAPI.h"
+    header "JCYMYModels.h"
+    export *
+    link "JCAPI"
+    link "JCLPAPI"
+    link "SkiaRenderLibrary"
+} 

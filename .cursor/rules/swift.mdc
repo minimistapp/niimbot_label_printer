@@ -1,6 +1,6 @@
 ---
 description: 
-globs: 
-alwaysApply: true
+globs: *.swift
+alwaysApply: false
 ---
-In Swift, this is a spurious warning: "No such module 'Flutter'".
+Don't write so many comments

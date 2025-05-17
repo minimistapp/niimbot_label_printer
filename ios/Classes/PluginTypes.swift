@@ -7,6 +7,7 @@ enum PluginEventType: String {
   case connectionState = "connectionState"
   case scanResult = "scanResult"
   case error = "error"
+  case printerStatus = "printerStatus"
   // Add more specific event types if needed
   // case printerStatus = "printerStatus"
   // case printProgress = "printProgress"
@@ -22,7 +23,7 @@ struct PluginEvent: Encodable {
   func toMap() -> [String: Any?] {
     // Attempt to handle basic types and nested structures reasonably
     let encodedData: Any?
-    if let encodableValue = data.value as? Encodable {
+    if data.value is Encodable {
       // Try encoding standard Codable types first
       // This is complex to get right universally for 'Any'.
       // A simpler approach is often to pass primitive types or basic collections directly.

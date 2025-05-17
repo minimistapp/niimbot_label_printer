@@ -1,52 +1,49 @@
 import CoreBluetooth
 import Flutter
+import NiimbotObjCSDK
 import UIKit
 
-public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
-  NiimbotPrinterDelegate, FlutterStreamHandler
-{
-  private var centralManager: CBCentralManager!
-  private var discoveredPeripherals: [UUID: CBPeripheral] = [:]
-  private var connectedPeripheral: CBPeripheral?
-  private var niimbotPrinter: NiimbotPrinter?
-
-  // Store Flutter results for async operations
-  private var pendingConnectResult: FlutterResult?
-  private var pendingScanResult: FlutterResult?
-  private var pendingSendResult: FlutterResult?
-
-  // Method channel & Event Channel
+public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private var channel: FlutterMethodChannel!
-  private var eventChannel: FlutterEventChannel!  // Add event channel
-  private var eventSink: FlutterEventSink?  // Add event sink
-  private var pluginLogger: PluginLogger?  // Logger instance
+  private var eventChannel: FlutterEventChannel!
+  private var eventSink: FlutterEventSink?
+  private var pluginLogger: PluginLogger?
+  private var connectedPrinterName: String?
 
   // --- Logging Helper ---
-  private func log(_ message: String, level: String = "info") {
-    pluginLogger?.log(message, level: level)
+  private func log(_ message: String, level: String = "info", props: [String: Any]? = nil) {
+    if let logger = pluginLogger {
+      logger.log(message, level: level, props: props)
+    } else {
+      // Fallback to print if logger is not yet initialized (e.g., during early registration)
+      let propString =
+        props?.map { element in "\(element.key): \(String(describing: element.value))" }.joined(
+          separator: ", ") ?? ""
+      var logMessage = "[NiimbotPlugin:\(level.uppercased())] \(message)"
+      if !propString.isEmpty {
+        logMessage += " | Props: \(propString)"
+      }
+      print(logMessage)
+    }
   }
 
   // --- Event Sending Helper ---
   private func sendEvent(type: PluginEventType, data: Any?) {
-    // Logs and errors are now handled by PluginLogger
     if type == .log || type == .error {
-      // Fallback print if logger is somehow bypassed (shouldn't happen)
-      print("WARN: Log/Error event sent via sendEvent. Type: \(type.rawValue)")
+      log(
+        "Log/Error event sent via sendEvent. Type: {type}", level: "warn",
+        props: ["type": type.rawValue])
       return
     }
-
     guard let sink = eventSink else {
-      // Cannot use logger here as sink is nil. Fallback to print.
-      print(
-        "WARN: EventSink is nil, cannot send event (\(type.rawValue)). Data: \(String(describing: data))"
-      )
+      log(
+        "EventSink is nil, cannot send event ({eventType}). Data: {eventData}", level: "warn",
+        props: ["eventType": type.rawValue, "eventData": String(describing: data)])
       return
     }
-    // EventChannel expects Any? so we send the dictionary directly.
-    // The PluginEvent struct/toMap was primarily for organization/potential JSON use.
     let eventMap: [String: Any?] = [
       "type": type.rawValue,
-      "data": data,  // Pass the data directly
+      "data": data,
     ]
     sink(eventMap)
   }
@@ -54,22 +51,39 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
   public static func register(with registrar: FlutterPluginRegistrar) {
     let methodChannel = FlutterMethodChannel(
       name: "st.mnm.niimbot/printer", binaryMessenger: registrar.messenger())
-    // Define Event Channel Name (ensure matches Dart constant)
     let eventChannel = FlutterEventChannel(
       name: "st.mnm.niimbot/printer_events", binaryMessenger: registrar.messenger())
 
     let instance = NiimbotPlugin()
-    instance.channel = methodChannel  // Store the method channel
-
-    // Set the stream handler for the event channel
+    instance.channel = methodChannel
     instance.eventChannel = eventChannel
-    eventChannel.setStreamHandler(instance)  // `instance` conforms to FlutterStreamHandler
+    eventChannel.setStreamHandler(instance)
 
-    // Initialize CBCentralManager here. The queue should ideally be a background queue.
-    instance.centralManager = CBCentralManager(delegate: instance, queue: nil)  // Use nil for main queue or specify a background queue
+    // SDK Initialization: initImageProcessing
+    // Ensure "SourceHanSans-Regular.ttc" (or your chosen font) is in ios/Assets/
+    // and s.resources in podspec points to it.
+    // The Bundle(for: NiimbotPlugin.self) ensures we are looking in the plugin's bundle.
+    if let fontPath = Bundle(for: NiimbotPlugin.self).path(
+      forResource: "SourceHanSans-Regular", ofType: "ttc")
+    {
+      var initError: NSError?
+      JCAPI.initImageProcessing(fontPath, error: &initError)
+      if let error = initError {
+        // Use instance.log once logger is initialized in onListen, or print for now
+        instance.log(
+          "SDK initImageProcessing error: {errorDescription}", level: "error",
+          props: ["errorDescription": error.localizedDescription])
+      } else {
+        instance.log("SDK initImageProcessing successful.")
+      }
+    } else {
+      instance.log(
+        "Default font for SDK (SourceHanSans-Regular.ttc) not found in plugin bundle.",
+        level: "error")
+    }
+
     registrar.addMethodCallDelegate(instance, channel: methodChannel)
-
-    instance.log("Plugin registration complete.")
+    instance.log("Plugin registration complete (logger will init in onListen).")
   }
 
   // MARK: - FlutterStreamHandler Methods
@@ -77,353 +91,468 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
   public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink)
     -> FlutterError?
   {
-    // Initialize the logger here, now that we have the sink
     self.eventSink = events
-    self.pluginLogger = PluginLogger(eventSink: events)
+    self.pluginLogger = PluginLogger(name: "niimbot.NiimbotPlugin", eventSink: events)
     log("EventChannel: onListen called, PluginLogger initialized.")
-
-    // Optionally send an initial state event
-    sendBluetoothStateEvent()
     return nil
   }
 
   public func onCancel(withArguments arguments: Any?) -> FlutterError? {
     log("EventChannel: onCancel called.")
     self.eventSink = nil
-    // Clear the logger when the sink is gone
     self.pluginLogger = nil
-    return nil  // Success
+    return nil
   }
 
   // MARK: - Method Call Handler
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    log("Handling method call: \(call.method)")  // Use helper
+    log("Handling method call: {method}", props: ["method": call.method])
     switch call.method {
     case "getPlatformVersion":
-      result("iOS " + UIDevice.current.systemVersion)
+      handleGetPlatformVersion(call: call, result: result)
 
     case "isBluetoothPermissionGranted":
-      let authorized: Bool
-      let status: CBManagerAuthorization
-      if #available(iOS 13.1, *) {
-        status = CBCentralManager.authorization  // Use CBManagerAuthorization
-      } else {
-        // Fallback for older iOS versions if needed, though 13.1+ is common now
-        status =
-          CBPeripheralManager.authorizationStatus() == .authorized ? .allowedAlways : .denied  // Approximate
-      }
-
-      switch status {
-      case .allowedAlways:
-        authorized = true
-      case .notDetermined:
-        authorized = false  // Or handle asking for permission
-        log("Bluetooth permission not determined.", level: "warn")
-      case .restricted:
-        authorized = false
-        log("Bluetooth permission restricted.", level: "warn")
-      case .denied:
-        authorized = false
-        log("Bluetooth permission denied.", level: "error")
-      @unknown default:
-        authorized = false
-        log("Unknown Bluetooth authorization status: \(status.rawValue)", level: "error")
-      }
-      log("Bluetooth permission authorized: \(authorized)")
-      result(authorized)
+      handleIsBluetoothPermissionGranted(call: call, result: result)
 
     case "isBluetoothEnabled":
-      let enabled = centralManager.state == .poweredOn
-      log("Bluetooth enabled: \(enabled)")  // Use helper
-      result(enabled)
+      handleIsBluetoothEnabled(call: call, result: result)
 
     case "isConnected":
-      let connected = connectedPeripheral != nil && connectedPeripheral?.state == .connected
-      log("Is Connected check: \(connected)")  // Use helper
-      result(connected)
+      handleIsConnected(call: call, result: result)
 
-    case "getPairedDevices":  // iOS equivalent: Scan for nearby devices
-      guard centralManager.state == .poweredOn else {
-        let errorMsg = "Bluetooth is not enabled"
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "BLUETOOTH_DISABLED", message: errorMsg, details: nil))
-        return
-      }
-      log("Starting scan for peripherals...")  // Use helper
-      pendingScanResult = result  // Store result callback
-      discoveredPeripherals.removeAll()
-      // Scan for peripherals advertising the Niimbot service UUID
-      log("Central Manager State before scan: \(centralManager.state.rawValue)")  // Log state
-      if centralManager.state == .poweredOn {
-        centralManager.scanForPeripherals(
-          withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])  // NEW: Scan for all devices, don't spam duplicates
-        log("Called scanForPeripherals(withServices: nil)")  // Log call success
-      } else {
-        log("Skipping scan because Bluetooth is not powered on.", level: "warn")
-      }
-      // Set a timer to stop scanning after a few seconds
-      // TODO: Implement a better timeout/stopScan mechanism
-      DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
-        self?.stopScanAndReturnResults()
-      }
+    case "getPairedDevices":
+      handleScanForPeripherals(call: call, result: result)
 
     case "connect":
-      guard centralManager.state == .poweredOn else {
-        let errorMsg = "Bluetooth is not enabled"
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "BLUETOOTH_DISABLED", message: errorMsg, details: nil))
-        return
-      }
-
-      // Expecting map like {'name': ..., 'address': ...} from Dart's device.toMap()
-      guard let args = call.arguments as? [String: Any],
-        let deviceIdentifierString = args["address"] as? String,  // Extract the 'address' key
-        let deviceUUID = UUID(uuidString: deviceIdentifierString)
-      else {
-        let errorMsg = "Invalid arguments: Expected map with 'address' (UUID string)"
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
-        return
-      }
-
-      log("Attempting to connect to peripheral with UUID: \(deviceUUID)")
-      pendingConnectResult = result  // Store result callback
-      sendEvent(
-        type: .connectionState, data: ["status": "connecting", "deviceId": deviceUUID.uuidString])
-
-      // Stop scanning before connecting
-      if centralManager.isScanning {
-        log("Stopping scan before connecting.")
-        centralManager.stopScan()
-      }
-
-      // Try to retrieve the peripheral if known
-      let knownPeripherals = centralManager.retrievePeripherals(withIdentifiers: [deviceUUID])
-      if let peripheral = knownPeripherals.first {
-        log("Found known peripheral. Connecting...")
-        connectToPeripheral(peripheral)
-      } else {
-        // If not known (e.g., after app restart), try finding it in discovered list
-        if let peripheral = discoveredPeripherals[deviceUUID] {
-          log("Found peripheral in discovered list. Connecting...")
-          connectToPeripheral(peripheral)
-        } else {
-          // Might need to scan first if the peripheral isn't known or discovered
-          let errorMsg = "Peripheral not found. Scan first."
-          log(errorMsg, level: "warn")
-          pendingConnectResult?(
-            FlutterError(code: "NOT_FOUND", message: errorMsg, details: nil))
-          pendingConnectResult = nil
-        }
-      }
+      handleConnect(call: call, result: result)
 
     case "send":
-      guard let printer = niimbotPrinter, let peripheral = connectedPeripheral,
-        peripheral.state == .connected
-      else {
-        let errorMsg = "Printer not connected"
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "NOT_CONNECTED", message: errorMsg, details: nil))
-        return
-      }
-
-      // Argument validation with specific error messages
-      guard let args = call.arguments as? [String: Any] else {
-        let errorMsg = "Invalid arguments: Expected a dictionary."
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
-        return
-      }
-      guard let bytesFlutter = args["bytes"] as? FlutterStandardTypedData else {
-        let errorMsg = "Invalid 'bytes' argument: Expected FlutterStandardTypedData."
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
-        return
-      }
-      guard let width = args["width"] as? Int else {
-        let errorMsg = "Invalid 'width' argument: Expected Int."
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
-        return
-      }
-      guard let height = args["height"] as? Int else {
-        let errorMsg = "Invalid 'height' argument: Expected Int."
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "INVALID_ARGUMENT", message: errorMsg, details: nil))
-        return
-      }
-
-      let bytes = bytesFlutter.data
-      let rotate = args["rotate"] as? Bool ?? false
-      let invertColor = args["invertColor"] as? Bool ?? false
-      let density = args["density"] as? Int ?? 3
-      let labelType = args["labelType"] as? Int ?? 1
-
-      log(
-        "Received image data: \(width)x\(height), \(bytes.count) bytes. Density: \(density), LabelType: \(labelType), Rotate: \(rotate), Invert: \(invertColor)"
-      )
-
-      guard let image = createImageFromBytes(bytes: bytes, width: width, height: height) else {
-        let errorMsg = "Could not create image from provided bytes"
-        log(errorMsg, level: "error")
-        result(FlutterError(code: "IMAGE_CREATION_FAILED", message: errorMsg, details: nil))
-        return
-      }
-
-      pendingSendResult = result  // Store result callback
-
-      Task {
-        do {
-          log("Starting printBitmap task...")
-          try await printer.printBitmap(
-            image, density: density, labelType: labelType, quantity: 1, rotate: rotate,
-            invertColor: invertColor)
-          log("printBitmap task finished successfully.")
-          // Send success event maybe?
-          self.pendingSendResult?(true)
-        } catch {
-          let errorMsg = "Print failed: \(error.localizedDescription)"
-          self.log(errorMsg, level: "error")
-          self.sendEvent(
-            type: .error,
-            data: [
-              "code": "PRINT_FAILED", "message": errorMsg, "details": error.localizedDescription,
-            ])
-          self.pendingSendResult?(
-            FlutterError(code: "PRINT_FAILED", message: errorMsg, details: nil))
-        }
-        self.pendingSendResult = nil  // Clear callback
-      }
+      handleSend(call: call, result: result)
 
     case "disconnect":
-      if let peripheral = connectedPeripheral {
-        log("Disconnecting from peripheral \(peripheral.identifier)")  // Use helper
-        centralManager.cancelPeripheralConnection(peripheral)
-        // Cleanup happens in didDisconnectPeripheral delegate method
-        // Send disconnecting event immediately
-        sendEvent(
-          type: .connectionState,
-          data: ["status": "disconnecting", "deviceId": peripheral.identifier.uuidString])
-      } else {
-        log("No peripheral connected to disconnect.")  // Use helper
-      }
-      result(true)  // Assume success, actual disconnect is async
+      handleDisconnect(call: call, result: result)
 
     default:
-      log("Method not implemented: \(call.method)", level: "warn")  // Use helper
+      log("Method not implemented: {method}", level: "warn", props: ["method": call.method])
       result(FlutterMethodNotImplemented)
     }
   }
 
-  // MARK: - Scan Stop Helper
-  private func stopScanAndReturnResults() {
-    guard centralManager.isScanning else { return }  // Only stop if scanning
+  // MARK: - Method Call Handlers (Refactored for SDK)
 
-    log("Stopping scan...")
-    centralManager.stopScan()
+  private func handleGetPlatformVersion(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    result("iOS " + UIDevice.current.systemVersion)
+  }
 
-    if let resultCallback = pendingScanResult {
-      log("Returning scan results.")
-      let deviceList = discoveredPeripherals.values.map { p in
-        return ["name": p.name ?? "Unknown", "address": p.identifier.uuidString]  // Return map
-      }
-      resultCallback(deviceList)
-      pendingScanResult = nil  // Clear callback
+  private func handleIsBluetoothPermissionGranted(
+    call: FlutterMethodCall, result: @escaping FlutterResult
+  ) {
+    let authorized: Bool
+    let status: CBManagerAuthorization
+    if #available(iOS 13.1, *) {
+      status = CBCentralManager.authorization
     } else {
-      log("Scan finished, but no pending result callback.", level: "warn")
+      status = CBPeripheralManager.authorizationStatus() == .authorized ? .allowedAlways : .denied
     }
-    // Send scan finished event?
-    sendEvent(type: .scanResult, data: ["status": "finished"])
-  }
 
-  // MARK: - Helper Functions
-
-  private func connectToPeripheral(_ peripheral: CBPeripheral) {
-    // Disconnect from any currently connected peripheral first
-    if let currentPeripheral = connectedPeripheral, currentPeripheral != peripheral {
+    switch status {
+    case .allowedAlways:
+      authorized = true
+    case .notDetermined:
+      authorized = false
+      log("Bluetooth permission not determined.", level: "warn")
+    case .restricted:
+      authorized = false
+      log("Bluetooth permission restricted.", level: "warn")
+    case .denied:
+      authorized = false
+      log("Bluetooth permission denied.", level: "error")
+    @unknown default:
+      authorized = false
       log(
-        "Disconnecting from previous peripheral \(currentPeripheral.identifier) before connecting to \(peripheral.identifier)"
-      )
-      centralManager.cancelPeripheralConnection(currentPeripheral)
-      // The actual cleanup and state update happens in didDisconnect delegate
+        "Unknown Bluetooth authorization status: {status}", level: "error",
+        props: ["status": status.rawValue])
     }
-
-    log("Connecting to \(peripheral.identifier)...")
-    // Don't set connectedPeripheral here, wait for didConnect
-    centralManager.connect(peripheral, options: nil)
+    log("Bluetooth permission authorized: {authorized}", props: ["authorized": authorized])
+    result(authorized)
   }
 
-  private func cleanupConnection(peripheralId: UUID? = nil, reason: String = "Unknown") {
-    log("Cleaning up connection for \(peripheralId?.uuidString ?? "N/A"). Reason: \(reason)")
+  private func handleIsBluetoothEnabled(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    // Use a temporary CBCentralManager to check state. Requires CoreBluetooth import.
+    // Note: This is synchronous and might not be ideal if called frequently,
+    // but for a one-off check it's generally acceptable.
+    // We can't store the manager easily without becoming its delegate and handling its lifecycle.
+    let tempManager = CBCentralManager(
+      delegate: nil, queue: nil,
+      options: [CBCentralManagerOptionShowPowerAlertKey: NSNumber(value: false)])
+    let isEnabled = tempManager.state == .poweredOn
+    log(
+      "Bluetooth enabled check: {isEnabled}, state: {stateRawValue}",
+      props: ["isEnabled": isEnabled, "stateRawValue": tempManager.state.rawValue])
+    result(isEnabled)
+  }
 
-    // Only fully cleanup if it's the currently connected one or if no specific ID given
-    if peripheralId == nil || connectedPeripheral?.identifier == peripheralId {
-      if connectedPeripheral != nil {
-        sendEvent(
+  private func handleIsConnected(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let sdkStatus = JCAPI.isConnectingState()
+    let connected = (sdkStatus == 1 || sdkStatus == 2)
+    log(
+      "Is Connected check (SDK): {connected}, SDK status code: {statusCode}",
+      props: ["connected": connected, "statusCode": sdkStatus])
+    if connected && self.connectedPrinterName == nil {
+      self.connectedPrinterName = JCAPI.connectingPrinterName()
+    } else if !connected {
+      self.connectedPrinterName = nil
+    }
+    result(connected)
+  }
+
+  private func handleScanForPeripherals(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    log("Starting scan for peripherals using SDK...")
+
+    // Before scanning, ensure BT permission is granted. The SDK might handle this, but good practice.
+    // Also check if Bluetooth is powered on.
+    let tempManager = CBCentralManager(
+      delegate: nil, queue: nil,
+      options: [CBCentralManagerOptionShowPowerAlertKey: NSNumber(value: false)])
+    guard tempManager.state == .poweredOn else {
+      let errorMsg = "Bluetooth is not powered on."
+      log(errorMsg, level: "error")
+      result(FlutterError(code: "BLUETOOTH_OFF", message: errorMsg, details: nil))
+      return
+    }
+
+    guard
+      CBCentralManager.authorization == .allowedAlways
+    else {
+      let errorMsg = "Bluetooth permission not granted for scanning."
+      log(errorMsg, level: "error")
+      result(FlutterError(code: "BLUETOOTH_PERMISSION_DENIED", message: errorMsg, details: nil))
+      return
+    }
+
+    JCAPI.scanBluetoothPrinter { [weak self] scannedPrinters in
+      guard let self = self else { return }
+      if let names = scannedPrinters as? [String] {
+        let deviceList = names.map { name_in -> [String: String] in
+          return ["name": name_in, "address": name_in]
+        }
+        self.log("SDK Scan found: {count} devices.", props: ["count": deviceList.count])
+        result(deviceList)
+      } else {
+        self.log("SDK Scan found no devices or failed to cast to [String].", level: "warn")
+        result([])
+      }
+    }
+  }
+
+  private func handleConnect(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+      let deviceIdentifierString = args["address"] as? String
+    else {
+      log("Invalid arguments for connect.", level: "error")
+      result(
+        FlutterError(
+          code: "INVALID_ARGUMENT", message: "Missing or invalid 'address' (printer name)",
+          details: nil))
+      return
+    }
+
+    let printerName = deviceIdentifierString
+    log(
+      "Attempting to connect to peripheral with Name: {name} using SDK",
+      props: ["name": printerName])
+    sendEvent(type: .connectionState, data: ["status": "connecting", "deviceId": printerName])
+
+    JCAPI.openPrinter(printerName) { [weak self] isSuccess in
+      guard let self = self else { return }
+      if isSuccess {
+        self.connectedPrinterName = printerName
+        self.log("SDK: Successfully connected to {name}", props: ["name": printerName])
+        self.sendEvent(
+          type: .connectionState, data: ["status": "connected", "deviceId": printerName])
+
+        self.setupSDKCallbacks(printerName: printerName)
+        result(true)
+      } else {
+        self.log("SDK: Failed to connect to {name}", level: "error", props: ["name": printerName])
+        self.sendEvent(
           type: .connectionState,
           data: [
-            "status": "disconnected", "deviceId": connectedPeripheral!.identifier.uuidString,
-            "reason": reason,
+            "status": "error", "deviceId": printerName, "message": "Failed to connect via SDK",
           ])
+        result(
+          FlutterError(
+            code: "CONNECTION_FAILED", message: "SDK: Failed to connect to \(printerName)",
+            details: nil))
       }
-      connectedPeripheral?.delegate = nil
-      // niimbotPrinter?.cleanup()  // Ensure NiimbotPrinter cleans up its resources << NEEDS AWAIT
-      Task { await niimbotPrinter?.cleanup() }  // Wrap in Task
-      niimbotPrinter = nil
-      connectedPeripheral = nil  // Clear the main reference LAST
-    } else {
-      log(
-        "Cleanup called for peripheral \(peripheralId?.uuidString ?? "N/A") but it wasn't the active connectedPeripheral (\(connectedPeripheral?.identifier.uuidString ?? "None")). Ignoring full cleanup.",
-        level: "warn")
+    }
+  }
+
+  private func setupSDKCallbacks(printerName: String) {
+    JCAPI.getPrintingErrorInfo { [weak self] printInfo in
+      guard let self = self, let infoStr = printInfo else { return }
+      self.log(
+        "SDK Print Error Info: {info}", level: "error",
+        props: ["info": infoStr, "printerName": printerName])
+      self.sendEvent(
+        type: .error, data: ["code": "PRINTER_ERROR", "message": infoStr, "deviceId": printerName])
     }
 
-    // Clear any pending results that depended on the connection, regardless of which peripheral it was for
-    // It might be safer to check if the error is related to the specific peripheral before failing.
-    if let connectResult = pendingConnectResult {
-      let errorMsg = "Operation cancelled due to disconnection (Reason: \(reason))"
-      log("Failing pending connect result: \(errorMsg)", level: "warn")
-      // Check if the failed connection attempt was for the peripheral being cleaned up.
-      // This requires storing the target UUID for the pendingConnectResult.
-      // For now, we fail any pending connect.
-      connectResult(FlutterError(code: "DISCONNECTED", message: errorMsg, details: nil))
-      pendingConnectResult = nil
+    JCAPI.getPrintingCountInfo { [weak self] printDicInfo in
+      guard let self = self, let infoDict = printDicInfo as? [String: Any] else { return }
+      self.log(
+        "SDK Print Count Info: {info}", props: ["info": infoDict, "printerName": printerName])
+      self.sendEvent(
+        type: .printerStatus,
+        data: ["statusType": "printCount", "data": infoDict, "deviceId": printerName])
     }
-    if let sendResult = pendingSendResult {
-      let errorMsg = "Send operation cancelled due to disconnection (Reason: \(reason))"
-      log("Failing pending send result: \(errorMsg)", level: "warn")
-      sendResult(FlutterError(code: "DISCONNECTED", message: errorMsg, details: nil))
-      pendingSendResult = nil
+
+    let _ = JCAPI.getPrintStatusChange { [weak self] statusDicInfo in
+      guard let self = self, let statusDict = statusDicInfo as? [String: Any] else { return }
+      self.log(
+        "SDK Printer Status Change: {status}",
+        props: ["status": statusDict, "printerName": printerName])
+      self.sendEvent(
+        type: .printerStatus,
+        data: ["statusType": "statusChange", "data": statusDict, "deviceId": printerName])
     }
-    if let scanResult = pendingScanResult {
-      let errorMsg = "Scan operation cancelled due to disconnection (Reason: \(reason))"
-      log("Failing pending scan result: \(errorMsg)", level: "warn")
-      scanResult(FlutterError(code: "DISCONNECTED", message: errorMsg, details: nil))
-      pendingScanResult = nil
+  }
+
+  private func handleSend(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    log("Starting handleSend with SDK drawing methods...")
+
+    guard JCAPI.isConnectingState() == 1 || JCAPI.isConnectingState() == 2 else {
+      log("Printer not connected for send operation.", level: "error")
+      result(FlutterError(code: "NOT_CONNECTED", message: "Printer not connected", details: nil))
+      return
     }
+
+    guard let args = call.arguments as? [String: Any],
+      let bytesFlutter = args["bytes"] as? FlutterStandardTypedData,
+      let widthMillimeters = args["width"] as? Double,  // Assuming mm from Flutter
+      let heightMillimeters = args["height"] as? Double,  // Assuming mm from Flutter
+      // These were image pixel dimensions before, now assuming label element dimensions in mm
+      let imagePixelWidth = args["imagePixelWidth"] as? Int,
+      let imagePixelHeight = args["imagePixelHeight"] as? Int
+    else {
+      log(
+        "Invalid arguments for send. Need bytes, width (mm), height (mm), imagePixelWidth, imagePixelHeight.",
+        level: "error")
+      result(
+        FlutterError(code: "INVALID_ARGUMENT", message: "Invalid arguments for send", details: nil))
+      return
+    }
+
+    let imageDataBytes = bytesFlutter.data
+    let blackRules = args["density"] as? Int ?? 3
+    let paperStyle = args["labelType"] as? Int ?? 1
+    let quantity = args["quantity"] as? Int ?? 1  // quantity for JCAPI.commit onePageNumbers
+    // let performRotate = args["rotate"] as? Bool ?? false // Rotation handled by DrawLableImage
+    // let performInvert = args["invertColor"] as? Bool ?? false // Inversion might be part of imageProcessingType
+
+    let imageProcessingType = args["imageProcessingType"] as? Int ?? 1  // Default to 1
+    let imageProcessingValue = args["imageProcessingValue"] as? Float ?? 127.0  // Default to 127
+
+    log(
+      "Send params: LabelElementWidthMM={widthMm}, LabelElementHeightMM={heightMm}, Density={density}, LabelType={labelType}, Quantity={quantity}, imageProcessingType={imgProcType}, imageProcessingValue={imgProcVal}",
+      props: [
+        "widthMm": widthMillimeters,
+        "heightMm": heightMillimeters,
+        "density": blackRules,
+        "labelType": paperStyle,
+        "quantity": quantity,
+        "imgProcType": imageProcessingType,
+        "imgProcVal": imageProcessingValue,
+      ]
+    )
+
+    guard
+      let uiImage = createImageFromBytes(
+        bytes: imageDataBytes, width: imagePixelWidth, height: imagePixelHeight)
+    else {
+      log("Could not create UIImage from provided bytes.", level: "error")
+      result(
+        FlutterError(
+          code: "IMAGE_CREATION_FAILED", message: "Could not create UIImage from bytes",
+          details: nil))
+      return
+    }
+
+    // Convert UIImage to PNG Base64 string for DrawLableImage
+    guard let pngData = uiImage.pngData(), !pngData.isEmpty else {
+      log("Could not get PNG data from UIImage.", level: "error")
+      result(
+        FlutterError(
+          code: "IMAGE_CONVERSION_FAILED", message: "Could not get PNG data from UIImage",
+          details: nil))
+      return
+    }
+    let base64ImageData = pngData.base64EncodedString()
+    if base64ImageData.isEmpty {
+      log("Base64 image data string is empty.", level: "error")
+      result(
+        FlutterError(
+          code: "IMAGE_CONVERSION_FAILED", message: "Base64 image data string is empty",
+          details: nil))
+      return
+    }
+
+    log("Image converted to Base64, size: {size} chars.", props: ["size": base64ImageData.count])
+
+    // SDK Printing Sequence:
+    log(
+      "Calling SDK: startJob (density: {density}, paperStyle: {paperStyle})",
+      props: ["density": blackRules, "paperStyle": paperStyle])
+    JCAPI.startJob(Int32(blackRules), withPaperStyle: Int32(paperStyle)) {
+      [weak self] startSuccess in
+      guard let self = self else { return }
+      if startSuccess {
+        self.log("SDK: startJob successful. Initializing drawing board...")
+
+        // Initialize drawing board - dimensions should match the label or desired print area in mm
+        // For simplicity, using the passed width/height, assuming they are for the entire label.
+        // The image will be placed at (0,0) on this board and scaled to fit widthMillimeters, heightMillimeters
+        JCAPI.initDrawingBoard(
+          Float(widthMillimeters), withHeight: Float(heightMillimeters), withHorizontalShift: 0,
+          withVerticalShift: 0, rotate: 0, fontArray: [])
+        self.log(
+          "SDK: Drawing board initialized. Drawing image... WidthMM: {widthMm}, HeightMM: {heightMm}",
+          props: ["widthMm": widthMillimeters, "heightMm": heightMillimeters])
+
+        // Draw the image onto the board.
+        // x, y, w, h for DrawLableImage are in mm on the drawing board.
+        // We'll draw the image to fill the specified width/height in mm.
+        let drawSuccess = JCAPI.drawLableImage(
+          0, withY: 0, withWidth: Float(widthMillimeters), withHeight: Float(heightMillimeters),
+          withImageData: base64ImageData,
+          withRotate: 0,  // Rotation can be handled here if needed (0, 90, 180, 270)
+          withImageProcessingType: Int32(imageProcessingType),
+          withImageProcessingValue: imageProcessingValue)
+
+        if !drawSuccess {
+          self.log(
+            "SDK: DrawLableImage failed. ImageProcessingType: {type}, Value: {value}",
+            level: "error", props: ["type": imageProcessingType, "value": imageProcessingValue])
+          result(
+            FlutterError(
+              code: "DRAW_IMAGE_FAILED", message: "SDK: DrawLableImage failed", details: nil))
+          // It might be good to call endJob here if startJob was successful but drawing failed.
+          // JCAPI.endPrint { _ in } // Or cancelJob
+          return
+        }
+        self.log("SDK: DrawLableImage successful. Generating JSON...")
+
+        guard let jsonPrintData = JCAPI.generateLableJson(), !jsonPrintData.isEmpty else {
+          self.log("SDK: Failed to generate JSON print data or JSON is empty.", level: "error")
+          result(
+            FlutterError(
+              code: "JSON_GENERATION_FAILED", message: "SDK: Failed to generate JSON", details: nil)
+          )
+          return
+        }
+        self.log(
+          "SDK: JSON generated. Size: {size}. Calling commit...",
+          props: ["size": jsonPrintData.count])
+
+        JCAPI.commit(jsonPrintData, withOnePageNumbers: Int32(quantity)) { commitSuccess in
+          if commitSuccess {
+            self.log(
+              "SDK: commit command successful for {quantity} page(s). Will monitor via getPrintingCountInfo and then call endPrint.",
+              props: ["quantity": quantity]
+            )
+            // Simplified: Assume endPrint is called after a delay or count info.
+            // This needs robust handling as before.
+            var printCheckAttempts = 0
+            var timer: Timer?
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
+              guard let self = self else {
+                t.invalidate()
+                return
+              }
+              printCheckAttempts += 1
+              if printCheckAttempts >= 5 {
+                t.invalidate()
+                self.log(
+                  "Placeholder for print completion check timed out after {attempts} attempts. Calling endPrint...",
+                  props: ["attempts": printCheckAttempts]
+                )
+                JCAPI.endPrint { endSuccess in
+                  if endSuccess {
+                    self.log("SDK: endPrint successful.")
+                    result(true)
+                  } else {
+                    self.log("SDK: endPrint failed.", level: "error")
+                    result(
+                      FlutterError(
+                        code: "PRINT_END_FAILED", message: "SDK: Failed to end print job",
+                        details: nil))
+                  }
+                }
+              }
+            }
+            RunLoop.main.add(timer!, forMode: .common)
+
+          } else {
+            self.log("SDK: commit command failed.", level: "error")
+            result(
+              FlutterError(
+                code: "PRINT_CMD_FAILED", message: "SDK: Commit command failed", details: nil))
+          }
+        }
+      } else {
+        self.log("SDK: startJob failed.", level: "error")
+        result(
+          FlutterError(
+            code: "PRINT_START_FAILED", message: "SDK: Failed to start print job", details: nil))
+      }
+    }
+  }
+
+  private func handleDisconnect(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    log("Attempting to disconnect using SDK...")
+    let previouslyConnectedName = self.connectedPrinterName ?? JCAPI.connectingPrinterName()
+
+    JCAPI.closePrinter()
+
+    if let name = previouslyConnectedName, !name.isEmpty {
+      log("SDK: Disconnected from {name}.", props: ["name": name])
+      sendEvent(type: .connectionState, data: ["status": "disconnected", "deviceId": name])
+    } else {
+      log(
+        "SDK: Disconnect called, no specific printer name was tracked or returned by SDK post-disconnect."
+      )
+    }
+    self.connectedPrinterName = nil
+    result(true)
   }
 
   private func createImageFromBytes(bytes: Data, width: Int, height: Int) -> UIImage? {
-    log("Creating UIImage from \(bytes.count) bytes, \(width)x\(height)")
+    log(
+      "Creating UIImage from {byteCount} bytes, {width}x{height}",
+      props: ["byteCount": bytes.count, "width": width, "height": height]
+    )
     let bitsPerComponent = 8
-    let bitsPerPixel = 32  // Assuming ARGB_8888 from Flutter/Kotlin
+    let bitsPerPixel = 32
     let bytesPerRow = width * (bitsPerPixel / 8)
     let colorSpace = CGColorSpaceCreateDeviceRGB()
-    // Ensure the bitmap info matches ARGB_8888 format from Dart/Kotlin
-    // CGBitmapInfo.byteOrder32Big corresponds to ARGB on big-endian systems,
-    // but on little-endian iOS, it's BGRA. We need alpha last.
-    // CGImageAlphaInfo.premultipliedLast indicates RGBA (or BGRA depending on byte order)
-    // Let's explicitly use RGBA order (alpha last) as it's more common for CGImage.
     let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
 
     guard bytes.count >= height * bytesPerRow else {
       log(
-        "Error: Provided data size (\(bytes.count)) is smaller than calculated required size (\(height * bytesPerRow)) for \(width)x\(height) image.",
-        level: "error")
+        "Error: Provided data size ({dataSize}) is smaller than calculated required size ({requiredSize}) for {width}x{height} image.",
+        level: "error",
+        props: [
+          "dataSize": bytes.count, "requiredSize": height * bytesPerRow, "width": width,
+          "height": height,
+        ]
+      )
       return nil
     }
 
     guard let providerRef = CGDataProvider(data: bytes as CFData) else {
-      log("Error: Could not create CGDataProvider", level: "error")
+      log(
+        "Error: Could not create CGDataProvider for image {width}x{height}", level: "error",
+        props: ["width": width, "height": height])
       return nil
     }
 
@@ -435,208 +564,54 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, CBCentralManagerDelegate,
         bitsPerPixel: bitsPerPixel,
         bytesPerRow: bytesPerRow,
         space: colorSpace,
-        bitmapInfo: bitmapInfo,  // Use RGBA format
+        bitmapInfo: bitmapInfo,
         provider: providerRef,
         decode: nil,
-        shouldInterpolate: false,  // Use false for pixel data
+        shouldInterpolate: false,
         intent: .defaultIntent)
     else {
-      log("Error: Could not create CGImage", level: "error")
+      log(
+        "Error: Could not create CGImage for image {width}x{height}", level: "error",
+        props: ["width": width, "height": height])
       return nil
     }
 
-    log("CGImage created successfully.")
+    log(
+      "CGImage {width}x{height} created successfully.", props: ["width": width, "height": height])
     return UIImage(cgImage: cgImage)
   }
 
-  // MARK: - CBCentralManagerDelegate
+  // MARK: - Image Utility Helpers (Moved from NiimbotPrinter.swift or adapted)
 
-  // Helper to send Bluetooth state events
-  private func sendBluetoothStateEvent() {
-    let stateString: String
-    switch centralManager.state {
-    case .poweredOn: stateString = "poweredOn"
-    case .poweredOff: stateString = "poweredOff"
-    case .resetting: stateString = "resetting"
-    case .unauthorized: stateString = "unauthorized"
-    case .unknown: stateString = "unknown"
-    case .unsupported: stateString = "unsupported"
-    @unknown default: stateString = "unknown_default"
-    }
-    log("Bluetooth State Updated: \(stateString)")
-    sendEvent(type: .bluetoothState, data: ["state": stateString])
+  private func rotateImage(image: UIImage, degrees: CGFloat) -> UIImage? {
+    guard let cgImage = image.cgImage else { return nil }
+    let rotatedSize = CGRect(origin: .zero, size: image.size).applying(
+      CGAffineTransform(rotationAngle: degrees * .pi / 180)
+    ).integral.size
+    UIGraphicsBeginImageContextWithOptions(rotatedSize, false, image.scale)
+    guard let context = UIGraphicsGetCurrentContext() else { return nil }
+    context.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
+    context.rotate(by: degrees * .pi / 180)
+    context.scaleBy(x: 1.0, y: -1.0)
+    context.draw(
+      cgImage,
+      in: CGRect(
+        x: -image.size.width / 2, y: -image.size.height / 2, width: image.size.width,
+        height: image.size.height))
+    let rotatedImage = UIGraphicsGetImageFromCurrentImageContext()
+    UIGraphicsEndImageContext()
+    return rotatedImage
   }
 
-  public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-    sendBluetoothStateEvent()  // Send event
-
-    if central.state != .poweredOn {
-      cleanupConnection(reason: "Bluetooth state changed to \(central.state)")
-      // Also stop scanning if it was active
-      if centralManager.isScanning {
-        log("Stopping scan due to Bluetooth state change.", level: "warn")
-        centralManager.stopScan()
-        // Fail pending scan result if any
-        if let scanCallback = pendingScanResult {
-          let errorMsg = "Scan stopped: Bluetooth state changed"
-          scanCallback(FlutterError(code: "BLUETOOTH_OFF", message: errorMsg, details: nil))
-          pendingScanResult = nil
-        }
-        sendEvent(
-          type: .scanResult, data: ["status": "stopped", "reason": "Bluetooth not powered on"])
-      }
-    }
-    // Optional: Start scanning automatically if needed when powered on?
-    // else { startScanImplicitlyIfNeeded() }
-  }
-
-  public func centralManager(
-    _ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
-    advertisementData: [String: Any], rssi RSSI: NSNumber
-  ) {
-    let name = peripheral.name ?? "Unknown"
-    log("Discovered peripheral: \(name) (\(peripheral.identifier)), RSSI: \(RSSI)")
-    // Log advertisement data for debugging
-    log("Advertisement Data: \(advertisementData)")
-    discoveredPeripherals[peripheral.identifier] = peripheral
-
-    // Send scan result update via EventChannel
-    let deviceData: [String: Any] = [
-      "name": name,
-      "address": peripheral.identifier.uuidString,  // Use 'address' for consistency
-      "rssi": RSSI.intValue,
-    ]
-    sendEvent(type: .scanResult, data: ["status": "discovered", "device": deviceData])
-
-    // Don't resolve pendingScanResult here; wait for timeout or stopScan.
-  }
-
-  public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-    let deviceId = peripheral.identifier.uuidString
-    log("Successfully connected to peripheral: \(peripheral.name ?? "Unknown") (\(deviceId))")
-
-    // Stop scanning if we were (connect usually implies intent)
-    if centralManager.isScanning {
-      log("Stopping scan because connection established.")
-      centralManager.stopScan()
-      // Don't necessarily fail pendingScanResult, connection might have been the goal
-      // If scan result was explicitly requested, handle it separately maybe?
-      sendEvent(
-        type: .scanResult, data: ["status": "stopped", "reason": "Connected to peripheral"])
-    }
-
-    // Ensure logger is available before creating the actor
-    guard let logger = self.pluginLogger else {
-      log(
-        "Error: Cannot initialize NiimbotPrinter, logger not ready (event channel listener might not be attached yet).",
-        level: "error")
-      centralManager.cancelPeripheralConnection(peripheral)  // Disconnect if logger isn't ready
-      pendingConnectResult?(
-        FlutterError(code: "INTERNAL_ERROR", message: "Logger not initialized", details: nil))
-      pendingConnectResult = nil
-      // Send error state? Connection failed essentially.
-      sendEvent(
-        type: .connectionState,
-        data: ["status": "error", "deviceId": deviceId, "message": "Logger not initialized"])
-      return
-    }
-
-    connectedPeripheral = peripheral  // Confirm connection *now*
-    // Pass the logger instance to the actor's initializer
-    niimbotPrinter = NiimbotPrinter(peripheral: peripheral, logger: logger)
-    // niimbotPrinter?.delegate = self  // <<< REMOVE THIS LINE (Actor has no delegate)
-
-    // Discover services and characteristics (asynchronously)
-    log("Discovering services for \(deviceId)...")
-    peripheral.discoverServices([niimbotServiceUUID])
-
-    // Send connected event BEFORE discovery starts
-    sendEvent(type: .connectionState, data: ["status": "connected", "deviceId": deviceId])
-
-    // Complete the pending connection result
-    pendingConnectResult?(true)
-    pendingConnectResult = nil
-  }
-
-  public func centralManager(
-    _ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?
-  ) {
-    let errorMsg = error?.localizedDescription ?? "Unknown error"
-    let deviceId = peripheral.identifier.uuidString
-    log("Failed to connect to peripheral: \(deviceId), error: \(errorMsg)", level: "error")
-
-    // Send failed connection event
-    sendEvent(
-      type: .connectionState,
-      data: ["status": "error", "deviceId": deviceId, "message": "Failed to connect: \(errorMsg)"])
-
-    // Cleanup if we thought we were connecting to *this* specific peripheral
-    // (Check based on pendingConnect logic or if connectedPeripheral was tentatively set)
-    // cleanupConnection(peripheralId: peripheral.identifier, reason: "Failed to connect: \(errorMsg)") // Careful: might clean up valid connection if called unexpectedly
-
-    pendingConnectResult?(
-      FlutterError(
-        code: "CONNECTION_FAILED", message: "Failed to connect: \(errorMsg)", details: nil))
-    pendingConnectResult = nil
-    // Ensure cleanup happens for the specific peripheral we failed to connect to.
-    cleanupConnection(peripheralId: peripheral.identifier, reason: "Failed to connect: \(errorMsg)")
-  }
-
-  public func centralManager(
-    _ central: CBCentralManager,
-    didDisconnectPeripheral peripheral: CBPeripheral,
-    error: Error?
-  ) {
-    let reason = error?.localizedDescription ?? "Disconnected by central or peripheral"
-    let deviceId = peripheral.identifier.uuidString
-    log(
-      "Disconnected from peripheral: \(deviceId), Reason: \(reason)",
-      level: error == nil ? "info" : "warn")
-
-    // Send disconnect event BEFORE cleanup
-    sendEvent(
-      type: .connectionState,
-      data: ["status": "disconnected", "deviceId": deviceId, "reason": reason])
-
-    // Only clean up if this is the peripheral we *thought* was connected
-    if connectedPeripheral?.identifier == peripheral.identifier {
-      cleanupConnection(peripheralId: peripheral.identifier, reason: reason)
-    } else {
-      log(
-        "Disconnected from a peripheral (\(deviceId)) that wasn't the tracked 'connectedPeripheral' (\(connectedPeripheral?.identifier.uuidString ?? "None")). Ignoring full cleanup.",
-        level: "warn")
-      // Should we still clear pending requests related to this peripheralId if possible?
-    }
-  }
-
-  // MARK: - NiimbotPrinterDelegate
-
-  // Note: These delegate methods might need more context (e.g., which command was it responding to?)
-  // For now, just log and forward raw data/errors if needed. A command queue with callbacks/continuations is better.
-  func printerDidRespond(data: Data?, error: Error?) {
-    // Forward the response data/error to the NiimbotPrinter instance for processing
-    // niimbotPrinter?.handleResponse(data: data, error: error) // <<< Incorrect: private method
-    niimbotPrinter?.handleResponseFromDelegate(data: data, error: error)  // <<< Correct: Use nonisolated handler
-  }
-
-  func printerDidSend(error: Error?) {
-    if let error = error {
-      log(
-        "NiimbotPrinterDelegate: printerDidSend (write) failed: \(error.localizedDescription)",
-        level: "error")
-      // This might correlate to a sendCommand failure
-      sendEvent(
-        type: .error,
-        data: [
-          "source": "printerDelegate", "code": "WRITE_ERROR", "message": error.localizedDescription,
-        ])
-      // Fail pending send result if active and this error is relevant? Needs correlation.
-      // if let sendResult = pendingSendResult { ... }
-    } else {
-      // This just means the write was accepted by CoreBluetooth, not that the command succeeded.
-      // log("NiimbotPrinterDelegate: printerDidSend - Write acknowledged by Bluetooth stack.")
-    }
-    // <<< ADD THIS LINE: Notify actor's handler >>>
-    niimbotPrinter?.handleWriteConfirmationFromDelegate(error: error)
+  private func invertImageColors(image: UIImage) -> UIImage? {
+    guard let cgImage = image.cgImage else { return nil }
+    let ciImage = CIImage(cgImage: cgImage)
+    guard let filter = CIFilter(name: "CIColorInvert") else { return nil }
+    filter.setValue(ciImage, forKey: kCIInputImageKey)
+    guard let outputCIImage = filter.outputImage else { return nil }
+    let context = CIContext(options: nil)
+    guard let outputCGImage = context.createCGImage(outputCIImage, from: outputCIImage.extent)
+    else { return nil }
+    return UIImage(cgImage: outputCGImage, scale: image.scale, orientation: image.imageOrientation)
   }
 }
