@@ -329,45 +329,58 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     guard let args = call.arguments as? [String: Any],
       let bytesFlutter = args["bytes"] as? FlutterStandardTypedData,
-      let widthMillimeters = args["width"] as? Double,  // Assuming mm from Flutter
-      let heightMillimeters = args["height"] as? Double,  // Assuming mm from Flutter
-      // These were image pixel dimensions before, now assuming label element dimensions in mm
-      let imagePixelWidth = args["imagePixelWidth"] as? Int,
-      let imagePixelHeight = args["imagePixelHeight"] as? Int
+      let widthNum = args["width"] as? NSNumber,
+      let heightNum = args["height"] as? NSNumber,
+      let imagePixelWidthNum = args["imagePixelWidth"] as? NSNumber,
+      let imagePixelHeightNum = args["imagePixelHeight"] as? NSNumber
     else {
       log(
-        "Invalid arguments for send. Need bytes, width (mm), height (mm), imagePixelWidth, imagePixelHeight.",
-        level: "error")
+        "Invalid arguments for send. Ensure bytes, width (mm), height (mm), imagePixelWidth, imagePixelHeight are provided and are numbers.",
+        level: "error",
+        props: ["argsReceived": args]
+      )
       result(
-        FlutterError(code: "INVALID_ARGUMENT", message: "Invalid arguments for send", details: nil))
+        FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "Invalid arguments for send. Check types and presence.", details: nil))
       return
     }
 
-    let imageDataBytes = bytesFlutter.data
-    let blackRules = args["density"] as? Int ?? 3
-    let paperStyle = args["labelType"] as? Int ?? 1
-    let quantity = args["quantity"] as? Int ?? 1  // quantity for JCAPI.commit onePageNumbers
-    // let performRotate = args["rotate"] as? Bool ?? false // Rotation handled by DrawLableImage
-    // let performInvert = args["invertColor"] as? Bool ?? false // Inversion might be part of imageProcessingType
+    let widthMillimeters = widthNum.doubleValue
+    let heightMillimeters = heightNum.doubleValue
+    let imagePixelWidth = imagePixelWidthNum.intValue
+    let imagePixelHeight = imagePixelHeightNum.intValue
 
-    let imageProcessingType = args["imageProcessingType"] as? Int ?? 1  // Default to 1
-    let imageProcessingValue = args["imageProcessingValue"] as? Float ?? 127.0  // Default to 127
+    let imageDataBytes = bytesFlutter.data
+
+    let blackRules = (args["density"] as? NSNumber)?.intValue ?? 3
+    let paperStyle = (args["labelType"] as? NSNumber)?.intValue ?? 1
+    let quantity = (args["quantity"] as? NSNumber)?.intValue ?? 1
+    let performRotate = (args["rotate"] as? NSNumber)?.boolValue ?? false
+    let performInvert = (args["invertColor"] as? NSNumber)?.boolValue ?? false
+
+    let imageProcessingType = (args["imageProcessingType"] as? NSNumber)?.intValue ?? 1
+    let imageProcessingValue = (args["imageProcessingValue"] as? NSNumber)?.floatValue ?? 127.0
 
     log(
-      "Send params: LabelElementWidthMM={widthMm}, LabelElementHeightMM={heightMm}, Density={density}, LabelType={labelType}, Quantity={quantity}, imageProcessingType={imgProcType}, imageProcessingValue={imgProcVal}",
+      "Send params: LabelElementWidthMM={widthMm}, LabelElementHeightMM={heightMm}, ImagePixelWidth={imgPxW}, ImagePixelHeight={imgPxH}, Density={density}, LabelType={labelType}, Quantity={quantity}, Rotate={rotate}, Invert={invert}, imageProcessingType={imgProcType}, imageProcessingValue={imgProcVal}",
       props: [
         "widthMm": widthMillimeters,
         "heightMm": heightMillimeters,
+        "imgPxW": imagePixelWidth,
+        "imgPxH": imagePixelHeight,
         "density": blackRules,
         "labelType": paperStyle,
         "quantity": quantity,
+        "rotate": performRotate,
+        "invert": performInvert,
         "imgProcType": imageProcessingType,
         "imgProcVal": imageProcessingValue,
       ]
     )
 
     guard
-      let uiImage = createImageFromBytes(
+      var uiImage = createImageFromBytes(  // Make uiImage mutable
         bytes: imageDataBytes, width: imagePixelWidth, height: imagePixelHeight)
     else {
       log("Could not create UIImage from provided bytes.", level: "error")
@@ -376,6 +389,19 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
           code: "IMAGE_CREATION_FAILED", message: "Could not create UIImage from bytes",
           details: nil))
       return
+    }
+
+    // Handle inversion if requested
+    if performInvert {
+      if let invertedImage = self.invertImageColors(image: uiImage) {
+        uiImage = invertedImage
+        log("Image colors inverted successfully.")
+      } else {
+        log("Failed to invert image colors. Proceeding with original image.", level: "warn")
+        // Optionally, one could choose to fail here if inversion is critical:
+        // result(FlutterError(code: "IMAGE_INVERSION_FAILED", message: "Could not invert image colors", details: nil))
+        // return
+      }
     }
 
     // Convert UIImage to PNG Base64 string for DrawLableImage
@@ -399,6 +425,10 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     log("Image converted to Base64, size: {size} chars.", props: ["size": base64ImageData.count])
 
+    // Determine rotation angle for SDK (0 or 90 degrees)
+    let rotationAngleForSDK: Int32 = performRotate ? 90 : 0
+    log("Rotation angle for SDK: {angle} degrees", props: ["angle": rotationAngleForSDK])
+
     // SDK Printing Sequence:
     log(
       "Calling SDK: startJob (density: {density}, paperStyle: {paperStyle})",
@@ -414,7 +444,7 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         // The image will be placed at (0,0) on this board and scaled to fit widthMillimeters, heightMillimeters
         JCAPI.initDrawingBoard(
           Float(widthMillimeters), withHeight: Float(heightMillimeters), withHorizontalShift: 0,
-          withVerticalShift: 0, rotate: 0, fontArray: [])
+          withVerticalShift: 0, rotate: 0, fontArray: [])  // Board rotation is 0, image rotation is separate
         self.log(
           "SDK: Drawing board initialized. Drawing image... WidthMM: {widthMm}, HeightMM: {heightMm}",
           props: ["widthMm": widthMillimeters, "heightMm": heightMillimeters])
@@ -425,7 +455,7 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         let drawSuccess = JCAPI.drawLableImage(
           0, withY: 0, withWidth: Float(widthMillimeters), withHeight: Float(heightMillimeters),
           withImageData: base64ImageData,
-          withRotate: 0,  // Rotation can be handled here if needed (0, 90, 180, 270)
+          withRotate: rotationAngleForSDK,  // Use the determined rotation angle
           withImageProcessingType: Int32(imageProcessingType),
           withImageProcessingValue: imageProcessingValue)
 

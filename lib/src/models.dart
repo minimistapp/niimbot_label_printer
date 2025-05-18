@@ -30,42 +30,54 @@ class BluetoothDevice {
 
 class PrintData {
   late Uint8List bytes;
-  late int width;
-  late int height;
+  late int imagePixelWidth;
+  late int imagePixelHeight;
+  late double labelWidthMm;
+  late double labelHeightMm;
   late bool rotate;
   late bool invertColor;
   late int density;
   late int labelType;
+  late int quantity;
 
   PrintData({
     required this.bytes,
-    required this.width,
-    required this.height,
+    required this.imagePixelWidth,
+    required this.imagePixelHeight,
+    required this.labelWidthMm,
+    required this.labelHeightMm,
     required this.rotate,
     required this.invertColor,
     required this.density,
     required this.labelType,
+    this.quantity = 1,
   });
 
   PrintData.fromMap(Map<String, dynamic> map) {
     bytes = map['bytes'];
-    width = map['width'];
-    height = map['height'];
+    imagePixelWidth = map['imagePixelWidth'] ?? map['width'];
+    imagePixelHeight = map['imagePixelHeight'] ?? map['height'];
+    labelWidthMm = map['labelWidthMm']?.toDouble() ?? (map['width'] as num?)?.toDouble() ?? 0.0;
+    labelHeightMm = map['labelHeightMm']?.toDouble() ?? (map['height'] as num?)?.toDouble() ?? 0.0;
     rotate = map['rotate'];
     invertColor = map['invertColor'];
     density = map['density'];
     labelType = map['labelType'];
+    quantity = map['quantity'] ?? 1;
   }
 
   Map<String, dynamic> toMap() {
     return {
       'bytes': bytes,
-      'width': width,
-      'height': height,
+      'width': labelWidthMm,
+      'height': labelHeightMm,
+      'imagePixelWidth': imagePixelWidth,
+      'imagePixelHeight': imagePixelHeight,
       'rotate': rotate,
       'invertColor': invertColor,
       'density': density,
       'labelType': labelType,
+      'quantity': quantity,
     };
   }
 }

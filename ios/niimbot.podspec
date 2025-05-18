@@ -25,15 +25,14 @@ A Flutter plugin to interact with Niimbot label printers using the native iOS SD
   s.preserve_paths = 'Headers/**/*', 'libs/*'
   
   s.vendored_libraries = 'libs/libJCAPI.a', 'libs/libJCLPAPI.a', 'libs/libSkiaRenderLibrary.a'
-  s.frameworks = 'AVFoundation', 'CoreMedia', 'CoreBluetooth'
-  s.libraries = 'bz2.1.0', 'iconv.2'
-  s.xcconfig = { 'OTHER_LDFLAGS' => '-ObjC' }
+  s.frameworks = 'AVFoundation', 'CoreMedia', 'CoreBluetooth', 'CoreAudio'
+  s.libraries = 'bz2.1.0', 'iconv.2', 'c++'
 
   # Resources (e.g., for fonts) - Assuming SourceHanSans-Regular.ttc is the chosen font
   s.resources = 'Assets/SourceHanSans-Regular.ttc'
 
   s.dependency 'Flutter'
-  s.platform = :ios, '13.0'
+  s.platform = :ios, '17.2'
 
   # Swift version
   s.swift_version = '5.0'
@@ -43,10 +42,12 @@ A Flutter plugin to interact with Niimbot label printers using the native iOS SD
     'DEFINES_MODULE' => 'YES',
     'CLANG_ENABLE_MODULES' => 'YES', # Enable Objective-C modules
     'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'NO', # Important for bridging header compatibility
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 arm64', # Ensuring i386 and simulator arm64 are excluded if needed
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64 i386', # UPDATED: Exclude x86_64 and i386 for simulator
+    'IPHONEOS_DEPLOYMENT_TARGET' => '17.2', # Explicitly set deployment target
+    'OTHER_LDFLAGS' => '$(inherited) -ObjC', # Back to just -ObjC, removed -ld_classic as user did
     # HEADER_SEARCH_PATHS should point to the directory containing the headers referenced by the module map.
     'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/Headers"', 
-    'OTHER_CFLAGS' => '$(inherited) -fmodule-map-file="$(PODS_TARGET_SRCROOT)/Headers/NiimbotObjCSDK.modulemap"', # Explicitly point to the module map
-    'OTHER_SWIFT_FLAGS' => '$(inherited) -Xcc -fmodule-map-file="$(PODS_TARGET_SRCROOT)/Headers/NiimbotObjCSDK.modulemap"' # For Swift to find the ObjC module
+    'OTHER_CFLAGS' => '$(inherited) -fmodule-map-file="$(PODS_TARGET_SRCROOT)/Headers/NiimbotObjCSDK.modulemap"',
+    'OTHER_SWIFT_FLAGS' => '$(inherited) -Xcc -fmodule-map-file="$(PODS_TARGET_SRCROOT)/Headers/NiimbotObjCSDK.modulemap"'
   }
 end
