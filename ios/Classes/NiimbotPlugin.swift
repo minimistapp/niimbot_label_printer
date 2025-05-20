@@ -477,8 +477,8 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler, CBCen
     log("Starting handleSend - REPLICATING NATIVE DEMO (TEXT & QR) - SIMPLIFIED FONT HANDLING...")
 
     // Ensure fonts are loaded/copied to Documents/font and get the list of font filenames
-    // let availableFontFiles = loadCustomFontsFromBundle()  // <<<<<<< TEMPORARILY COMMENTED OUT
-    // log("Available font files in Documents/font after load attempt: \(availableFontFiles)")
+    let availableFontFiles = loadCustomFontsFromBundle()
+    log("Available font files in Documents/font after load attempt: \(availableFontFiles)")
 
     guard JCAPI.isConnectingState() == 1 || JCAPI.isConnectingState() == 2 else {
       log("Printer not connected for send operation.", level: "error")
@@ -512,7 +512,7 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler, CBCen
     let textWidth: Float = 40.5
     let textHeight: Float = 6.5
     let textRotate: Int32 = 0
-    let textValue: String = "F金 银花 开植物 饮料 门"  // From demo
+    let textValue: String = "ABC"  // TEST WITH SIMPLE ASCII
     let textFontFamily: String = "ZT025"  // From demo, ensure this font is available
     let textFontSize: Float = 3.5
     let textAlignHorizontal: Int32 = 0  // 0: Left
@@ -551,6 +551,12 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler, CBCen
       if startSuccess {
         self.log("SDK: startJob successful. Initializing drawing board...")
 
+        // Prepare font array for initDrawingBoard
+        // The SDK demo passes an array of font filenames, e.g., @[@"ZT008.ttf", @"ZT025.ttf"]
+        // loadCustomFontsFromBundle() returns filenames like "MyFont.ttf"
+        let sdkFontArray = availableFontFiles  // <<<<<<< CORRECTED: Use filenames directly
+        self.log("Prepared fontArray for initDrawingBoard: \(sdkFontArray)")
+
         // Initialize drawing board based on demo parameters, using the loaded font files
         JCAPI.initDrawingBoard(
           boardWidth,
@@ -558,10 +564,10 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler, CBCen
           withHorizontalShift: 0,
           withVerticalShift: 0,
           rotate: boardRotate,
-          fontArray: []  // <<<<<<< TRYING WITH EMPTY ARRAY (OR NIL IF SDK/COMPILER PREFERS)
+          fontArray: sdkFontArray
         )
         self.log(
-          "SDK: Drawing board initialized (W:\(boardWidth), H:\(boardHeight), FontArray: EMPTY). Drawing text and QR code..."
+          "SDK: Drawing board initialized (W:\(boardWidth), H:\(boardHeight), FontArray: \(sdkFontArray)). Drawing text and QR code..."
         )
 
         // 1. Draw Text Element - Enhanced Logging
