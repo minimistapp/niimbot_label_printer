@@ -1,0 +1,14 @@
+{
+    "fonts": [
+        {
+            "name": "默认字体2",
+            "url": "ZT008.ttf",
+            "fontCode": "ZT008"
+        },
+        {
+            "name": "默认字体3",
+            "url": "ZT025.ttf",
+            "fontCode": "ZT025"
+        }
+    ]
+}
