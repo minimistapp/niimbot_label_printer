@@ -39,6 +39,8 @@ class PrintData {
   late int density;
   late int labelType;
   late int quantity;
+  int? imageProcessingType;
+  double? imageProcessingValue;
 
   PrintData({
     required this.bytes,
@@ -51,6 +53,8 @@ class PrintData {
     required this.density,
     required this.labelType,
     this.quantity = 1,
+    this.imageProcessingType,
+    this.imageProcessingValue,
   });
 
   PrintData.fromMap(Map<String, dynamic> map) {
@@ -64,6 +68,8 @@ class PrintData {
     density = map['density'];
     labelType = map['labelType'];
     quantity = map['quantity'] ?? 1;
+    imageProcessingType = map['imageProcessingType'];
+    imageProcessingValue = map['imageProcessingValue']?.toDouble();
   }
 
   Map<String, dynamic> toMap() {
@@ -78,6 +84,8 @@ class PrintData {
       'density': density,
       'labelType': labelType,
       'quantity': quantity,
+      'imageProcessingType': imageProcessingType,
+      'imageProcessingValue': imageProcessingValue,
     };
   }
 }

@@ -4,23 +4,23 @@
 #import <UIKit/UIKit.h>
 
 /**
- 建议在iOS9以上系统使用
+ It is recommended to use it on iOS 9 and above systems.
  */
 
 /**
- 条码模式枚举。
+ Barcode mode enumeration.
 
- 该枚举定义了不同的条码格式，可用于标识和选择特定的条码格式。
+ This enumeration defines different barcode formats, which can be used to identify and select specific barcode formats.
 
- - JCBarcodeFormatCodebar: CODEBAR 1D 格式。
- - JCBarcodeFormatCode39: Code 39 1D 格式。
- - JCBarcodeFormatCode93: Code 93 1D 格式。
- - JCBarcodeFormatCode128: Code 128 1D 格式。
- - JCBarcodeFormatEan8: EAN-8 1D 格式。
- - JCBarcodeFormatEan13: EAN-13 1D 格式。
- - JCBarcodeFormatITF: ITF (Interleaved Two of Five) 1D 格式。
- - JCBarcodeFormatUPCA: UPC-A 1D 格式。
- - JCBarcodeFormatUPCE: UPC-E 1D 格式。
+ - JCBarcodeFormatCodebar: CODEBAR 1D format.
+ - JCBarcodeFormatCode39: Code 39 1D format.
+ - JCBarcodeFormatCode93: Code 93 1D format.
+ - JCBarcodeFormatCode128: Code 128 1D format.
+ - JCBarcodeFormatEan8: EAN-8 1D format.
+ - JCBarcodeFormatEan13: EAN-13 1D format.
+ - JCBarcodeFormatITF: ITF (Interleaved Two of Five) 1D format.
+ - JCBarcodeFormatUPCA: UPC-A 1D format.
+ - JCBarcodeFormatUPCE: UPC-E 1D format.
 
  */
 typedef NS_ENUM(NSUInteger, JCBarcodeMode){
@@ -101,70 +101,70 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
 
 @interface JCAPI : NSObject
 /**
- 扫描附近的蓝牙打印机。
+ Scan for nearby Bluetooth printers.
  
- 该方法用于扫描附近的蓝牙打印机，并通过回调返回扫描到的打印机名称列表。
+ This method is used to scan for nearby Bluetooth printers and return a list of scanned printer names via a callback.
  
- @param completion 扫描完成回调块。扫描完成后，将调用此回调并传递扫描到的蓝牙打印机名称数组。
-        数组 `scanedPrinterNames` 包含了扫描到的蓝牙打印机名称。如果未扫描到任何打印机，数组为空。
+ @param completion Scan completion callback block. After the scan is complete, this callback will be called and an array of scanned Bluetooth printer names will be passed.
+        The array `scanedPrinterNames` contains the names of the scanned Bluetooth printers. If no printers are scanned, the array is empty.
  */
 + (void)scanBluetoothPrinter:(void(^)(NSArray *scanedPrinterNames))completion;
 
 /**
- 蓝牙连接指定名称的打印机。
+ Connect to a printer with the specified name via Bluetooth.
  
- 该方法用于与指定名称的蓝牙打印机进行连接。连接状态的变化会通过传递的回调进行通知。
+ This method is used to connect to a Bluetooth printer with the specified name. Changes in connection status will be notified through the passed callback.
  
- @param printerName 要连接的蓝牙打印机的名称。
- @param completion 连接状态回调块。当连接状态发生变化时，将调用此回调并传递连接状态的结果。
-        参数 `isSuccess` 代表是否成功连接打印机，YES 表示连接成功，NO 表示连接失败。
+ @param printerName The name of the Bluetooth printer to connect to.
+ @param completion Connection status callback block. When the connection status changes, this callback will be called and the connection status result will be passed.
+        The parameter `isSuccess` indicates whether the printer was successfully connected. YES means connection successful, NO means connection failed.
  */
 + (void)openPrinter:(NSString *)printerName
          completion:(DidOpened_Printer_Block)completion;
 
 
 /**
- 扫描附近的 Wi-Fi 打印机。
+ Scan for nearby Wi-Fi printers.
  
- 该方法用于扫描附近的 Wi-Fi 打印机，并通过回调返回扫描到的打印机信息列表。
+ This method is used to scan for nearby Wi-Fi printers and return a list of scanned printer information via a callback.
  
- @param completion 扫描完成回调块。扫描完成后，将调用此回调并传递扫描到的 Wi-Fi 打印机信息数组。
-        数组 `scanedPrinterNames` 包含了扫描到的 Wi-Fi 打印机信息。每个元素是一个字典，包含以下字段：
-        - `ipAdd`：打印机的 IP 地址。
-        - `bleName`：蓝牙名字。
-        - `port`：连接端口。
-        - `availableClient`：可用客户端连接数。
+ @param completion Scan completion callback block. After the scan is complete, this callback will be called and an array of scanned Wi-Fi printer information will be passed.
+        The array `scanedPrinterNames` contains the scanned Wi-Fi printer information. Each element is a dictionary containing the following fields:
+        - `ipAdd`: The IP address of the printer.
+        - `bleName`: Bluetooth name.
+        - `port`: Connection port.
+        - `availableClient`: Number of available client connections.
  */
 + (void)scanWifiPrinter:(void(^)(NSArray *scanedPrinterNames))completion;
 
 /**
- 扫描附近的 Wi-Fi 打印机。
+ Scan for nearby Wi-Fi printers.
  
- 该方法用于在指定的超时时间内扫描附近的 Wi-Fi 打印机，并通过回调返回扫描到的打印机名称列表。
+ This method is used to scan for nearby Wi-Fi printers within the specified timeout period and return a list of scanned printer names via a callback.
  
- @param timeout 扫描超时时间，单位为秒。在这段时间内进行扫描操作。
- @param completion 扫描完成回调块。扫描完成后，将调用此回调并传递扫描到的 Wi-Fi 打印机名称数组。
-        数组 `scanedPrinterNames` 包含了扫描到的 Wi-Fi 打印机名称。如果未扫描到任何打印机，数组为空。
+ @param timeout Scan timeout period in seconds. The scan operation will be performed within this time.
+ @param completion Scan completion callback block. After the scan is complete, this callback will be called and an array of scanned Wi-Fi printer names will be passed.
+        The array `scanedPrinterNames` contains the names of the scanned Wi-Fi printers. If no printers are scanned, the array is empty.
  */
 + (void)scanWifiPrinter:(float)timeout withCompletion:(void(^)(NSArray *scanedPrinterNames))completion;
 
 /**
-配置打印机连接手机当前连接wifi。
+Configure the printer to connect to the Wi-Fi currently connected to the mobile phone.
  
- @param   wifiName        wifi账号（非必须）
- @param   password        wifi密码。
- @param   completion      配置打印机连接Wi-Fi是否成功。
+ @param   wifiName        Wi-Fi account (not required).
+ @param   password        Wi-Fi password.
+ @param   completion      Whether the printer successfully connected to Wi-Fi.
  */
 + (void)configurationWifi:(NSString *)wifiName
                  password:(NSString *)password
                completion:(PRINT_DIC_INFO)completion;
 
 /**
- 获取Wi-Fi配网信息。
+ Get Wi-Fi network configuration information.
 
- 该方法用于获取Wi-Fi配网信息，通常返回Wi-Fi名称。
+ This method is used to get Wi-Fi network configuration information, usually returning the Wi-Fi name.
 
- @param completion Wi-Fi名称的回调。
+ @param completion Callback for Wi-Fi name.
  */
 + (void)getWifiConfiguration:(PRINT_DIC_INFO)completion;
 
@@ -172,30 +172,30 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
 
 
 /**
- 获取手机当前连接的Wi-Fi名称。
+ Get the name of the Wi-Fi currently connected to the mobile phone.
 
- 该方法用于获取手机当前连接的Wi-Fi的名称。
+ This method is used to get the name of the Wi-Fi currently connected to the mobile phone.
 
- @return 返回手机当前连接的Wi-Fi名称。
+ @return Returns the name of the Wi-Fi currently connected to the mobile phone.
  */
 + (NSString *)connectingWifiName;
 
 /**
- Wi-Fi连接指定名称的打印机。
+ Connect to a printer with the specified name via Wi-Fi.
  
- @param   host              打印机名称。
- @param   completion      连接打印机是否成功。（连接状态改变通过该回调返回）
+ @param   host              Printer name.
+ @param   completion      Whether the printer was successfully connected. (Connection status changes are returned through this callback)
  */
 +(void)openPrinterHost:(NSString *)host
             completion:(DidOpened_Printer_Block)completion;
 
 /**
-连接指定IP的打印机并进行 Wi-Fi 连接。
-该方法用于与指定 IP 地址的打印机建立 Wi-Fi 连接。连接状态的变化会通过传递的回调进行通知。
+Connect to the printer with the specified IP and perform Wi-Fi connection.
+This method is used to establish a Wi-Fi connection with the printer at the specified IP address. Changes in connection status will be notified through the passed callback.
 
-@param host 打印机的 IP 地址，用于指定要连接的打印机。
-@param completion 连接状态回调块。当连接状态发生变化时，将调用此回调并传递连接状态的结果。
-       参数 `isSuccess` 代表是否成功连接打印机，YES 表示连接成功，NO 表示连接失败。
+@param host The IP address of the printer, used to specify the printer to connect to.
+@param completion Connection status callback block. When the connection status changes, this callback will be called and the connection status result will be passed.
+       The parameter `isSuccess` indicates whether the printer was successfully connected. YES means connection successful, NO means connection failed.
 */
 +(void)openPrinterHost:(NSString *)host
                   port:(uint16_t)port
@@ -203,248 +203,248 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
 
 
 /**
- 关闭当前打开的打印机连接。
+ Close the currently open printer connection.
 
- 该方法用于关闭当前已经打开的打印机连接。在执行此操作后，将触发 `openPrinter:completion:` 方法的 `completion(NO)` 回调。
+ This method is used to close the currently open printer connection. After performing this operation, the `completion(NO)` callback of the `openPrinter:completion:` method will be triggered.
 
- 注意：调用此方法会中断与打印机的连接。
+ Note: Calling this method will interrupt the connection with the printer.
 
  */
 + (void)closePrinter;
 
 
 /**
- 获取当前连接的打印机名称（蓝牙或 Wi-Fi）。
+ Get the name of the currently connected printer (Bluetooth or Wi-Fi).
  
- 该方法用于获取当前已连接的打印机的名称。对于 Wi-Fi 连接，返回的是打印机的 IP 地址。
+ This method is used to get the name of the currently connected printer. For Wi-Fi connections, it returns the IP address of the printer.
  
- @return 当前连接的打印机名称。如果没有连接打印机，则返回 nil。
+ @return The name of the currently connected printer. Returns nil if no printer is connected.
  */
 + (NSString *)connectingPrinterName;
 
 /**
- 获取当前的蓝牙/Wi-Fi连接状态。
+ Get the current Bluetooth/Wi-Fi connection status.
  
- 该方法用于获取当前设备的蓝牙和 Wi-Fi 连接状态。
+ This method is used to get the current Bluetooth and Wi-Fi connection status of the device.
  
- @return 返回值为整型，表示连接状态。0 表示无连接，1 表示连接蓝牙，2 表示连接 Wi-Fi。
+ @return Returns an integer representing the connection status. 0 means no connection, 1 means Bluetooth connected, 2 means Wi-Fi connected.
  */
 + (int)isConnectingState;
 
 /**
-监听打印机状态变化
+Listen for printer status changes
  
  @param   completion
  @{
-    @"1": 盒盖状态-0打开/1关闭
-    @"2": 电量等级变化-1/2/3/4
-    @"3": 是否装有纸张-0没有/1有
-    @"5": 碳带状态-0无碳带/1有碳带
-    @“6”: wifi信号强度
+    @"1": Cover status - 0 open / 1 closed
+    @"2": Battery level change - 1/2/3/4
+    @"3": Whether paper is loaded - 0 no / 1 yes
+    @"5": Ribbon status - 0 no ribbon / 1 ribbon present
+    @"6": Wi-Fi signal strength
  }
- @return  是否支持监听打印机状态变化：YES:支持、NO:不支持
+ @return  Whether listening for printer status changes is supported: YES: supported, NO: not supported
  */
 + (BOOL)getPrintStatusChange:(PRINT_DIC_INFO)completion;
 
 
 /**
- 获取打印机内安装的标签尺寸（目前仅支持M2机型，固件版本V1.24以上版本）
- 注意事项:statusCode为0，paperType参数不为0时读取的参数有效
+ Get the label size installed in the printer (currently only supports M2 models, firmware version V1.24 and above)
+ Note: When statusCode is 0 and paperType parameter is not 0, the read parameters are valid.
  @{@"statusCode":@"0",
-    @"result":@{@"gapHeightPixel":arrs[0],//间隙高度(黑标高度)(单位像素)
-            @"totalHeightPixel":arrs[1],//纸张高度(包含间隙)(单位像素)
-            @"paperType":arrs[2],//纸张类型 ：1:间隙纸; 2:黑标纸; 3:连续纸; 4:定孔纸; 5:透明纸; 6:标牌;
-            @"gapHeight":arrs[3],//间隙高度(黑标高度)(单位毫米)
-            @"totalHeight":arrs[4],//纸张高度(包含间隙)(单位毫米)
-            @"paperWidthPixel":arrs[5],//纸张宽度(包含间隙)(单位像素)
-            @"paperWidth":arrs[6],//纸张宽度(包含间隙)(单位毫米)
-            @"direction":arrs[7], //尾巴方向1上2下3左4右（暂不支持）
-            @"tailLengthPixel":arrs[8],//尾巴长度(单位像素)
-            @"tailLength":arrs[9]}} //尾巴长度(单位毫米)
+    @"result":@{@"gapHeightPixel":arrs[0], //Gap height (black mark height) (unit: pixel)
+            @"totalHeightPixel":arrs[1], //Paper height (including gap) (unit: pixel)
+            @"paperType":arrs[2], //Paper type: 1: Gap paper; 2: Black mark paper; 3: Continuous paper; 4: Perforated paper; 5: Transparent paper; 6: Label;
+            @"gapHeight":arrs[3], //Gap height (black mark height) (unit: mm)
+            @"totalHeight":arrs[4], //Paper height (including gap) (unit: mm)
+            @"paperWidthPixel":arrs[5], //Paper width (including gap) (unit: pixel)
+            @"paperWidth":arrs[6], //Paper width (including gap) (unit: mm)
+            @"direction":arrs[7], //Tail direction 1 up 2 down 3 left 4 right (not currently supported)
+            @"tailLengthPixel":arrs[8], //Tail length (unit: pixel)
+            @"tailLength":arrs[9]}} //Tail length (unit: mm)
  */
 + (void)getPaperInfo:(PRINT_DIC_INFO)completion;
 
 /**
- 影响缓存和暂停功能，缓存最多5个任务，用以提高打印的连续型，提高打印体验
-  否启动SDK缓存：YES:启动、NO:不启动
+ Affects caching and pause functions. Up to 5 tasks can be cached to improve print continuity and enhance the printing experience.
+  Whether to enable SDK caching: YES: enable, NO: disable
  */
     + (void)setPrintWithCache:(BOOL)startCache;
 
 /**
- 打印机打印前传入总打印份数
+ Pass in the total number of print copies before the printer starts printing.
 
- @param totalQuantityOfPrints 设置总打印份数，表示所有页面的打印份数之和。例如，如果你有3页需要打印，第一页打印3份，第二页打印2份，第三页打印5份，那么count的值应为10（3+2+5）。
+ @param totalQuantityOfPrints Set the total number of print copies, which represents the sum of print copies for all pages. For example, if you need to print 3 pages, with the first page printed 3 times, the second page 2 times, and the third page 5 times, then the value of count should be 10 (3+2+5).
  */
 + (void)setTotalQuantityOfPrints:(NSInteger)totalQuantityOfPrints;
 
 /**
- 蓝牙/Wi-Fi取消打印(打印未完成调用)。
+ Cancel printing via Bluetooth/Wi-Fi (call if printing is not complete).
  
- @param   completion      打印结束回调（在发生异常后不会返回）
+ @param   completion      Print end callback (will not be returned after an exception occurs)
  */
 + (void)cancelJob:(DidPrinted_Block)completion;
 
 /**
- 蓝牙/Wi-Fi打印完成(打印完成后调用)。
+ Printing completed via Bluetooth/Wi-Fi (call after printing is complete).
  
- @param   completion      打印结束回调（在发生异常后不会返回）
+ @param   completion      Print end callback (will not be returned after an exception occurs)
  */
 + (void)endPrint:(DidPrinted_Block)completion;
 
 /**
- 蓝牙/Wi-Fi打价器打印完成的份数(只对打价器有效，可能部分丢失，app做超时重置状态)。
+ Number of copies completed by Bluetooth/Wi-Fi price labeler (only valid for price labeler, may be partially lost, app should reset status on timeout).
  
- @param   count           打印完成的份数（在发生异常后不会返回）
+ @param   count           Number of completed print copies (will not be returned after an exception occurs)
  @{
-    @"totalCount":@"总打印的张数计数" //返回必带的key
-    @"pageCount":@"当前打印第PageNo页的第几份" //非必带
-    @"pageNO":@"当前打印第几页"。 //非必带
-    @"tid":@"写入rfid返回的tid码"  //非必带
-    @"carbonUsed":@"碳带使用量，单位毫米"  //非必带
+    @"totalCount":@"Total number of printed sheets" //Required key
+    @"pageCount":@"Current copy number of the current page (PageNo)" //Optional
+    @"pageNO":@"Current page number being printed" //Optional
+    @"tid":@"TID code returned after writing to RFID"  //Optional
+    @"carbonUsed":@"Ribbon usage, unit: mm"  //Optional
  }
  */
 + (void)getPrintingCountInfo:(PRINT_DIC_INFO)count;
 
 /**
- 蓝牙/Wi-Fi异常接收(连接成功后调用)。
+ Receive Bluetooth/Wi-Fi exceptions (call after successful connection).
  
- @param   error           打印异常：1:盒盖打开,
-                                  2:缺纸,
-                                  3:电量不足,
-                                  4:电池异常,
-                                  5:手动停止,
-                                  6:数据错误,
-                                    （提交打印数据失败-B3/图像生成失败/发送数据错误,打印机校验不通过打印机返回）
-                                  7:温度过高,
-                                  8:出纸异常,
- 9-打印忙碌(当前正在转动马达(正在打印中或者走纸)/打印机正在升级固件)
- 10-没有检测到打印头
- 11-环境温度过低
- 12.打印头未锁紧
- 13-未检测到碳带
- 14-不匹配的碳带
- 15-用完的碳带
- 16-不支持的纸张类型
- 17-设置纸张失败
- 18-设置打印模式失败
- 19-设置打印浓度失败（允许打印,仅上报异常）
- 20-写入Rfid失败
- 21-边距设置错误
- (边距必须大于0，上边距+下边距必须小于画板高度，左边距+右边距必须小于画板宽度)
- 22-通讯异常（超时，打印机指令一直拒绝）
- 23-打印机断开
- 24-画板参数设置错误
- 25-旋转角度参数错误
- 26-json参数错误(pc)
- 27-出纸异常（关闭上盖检测）
- 28-检查纸张类型
- 29-RFID标签进行非RFID模式打印时
- 30-浓度设置不支持
- 31-不支持的打印模式
- 32-标签材质设置失败(材质设置超时或者失败，不阻断正常打印)
- 33-不支持的标签材质设置(阻断正常打印)
- 34-打印机异常(阻断正常打印)
- 35-切刀异常(T2阻断正常打印)
- 36-缺纸(T2未放纸)
- 37-打印机异常(T2无法通过指令恢复，需要手动按打印机)
- 50-非法标签
- 51-非法碳带和标签
+ @param   error           Printing exception: 1: Cover open,
+                                  2: Out of paper,
+                                  3: Low battery,
+                                  4: Battery abnormality,
+                                  5: Manual stop,
+                                  6: Data error,
+                                    (Failed to submit print data - B3/Image generation failed/Sending data error, printer verification failed, printer returns)
+                                  7: Temperature too high,
+                                  8: Paper output abnormality,
+ 9-Printer busy (motor currently rotating (printing or feeding paper)/printer firmware upgrading)
+ 10-Print head not detected
+ 11-Ambient temperature too low
+ 12.Print head not locked
+ 13-Ribbon not detected
+ 14-Mismatched ribbon
+ 15-Used ribbon
+ 16-Unsupported paper type
+ 17-Failed to set paper
+ 18-Failed to set print mode
+ 19-Failed to set print density (printing allowed, only reports exception)
+ 20-Failed to write RFID
+ 21-Margin setting error
+ (Margins must be greater than 0, top margin + bottom margin must be less than canvas height, left margin + right margin must be less than canvas width)
+ 22-Communication abnormality (timeout, printer commands consistently rejected)
+ 23-Printer disconnected
+ 24-Canvas parameter setting error
+ 25-Rotation angle parameter error
+ 26-JSON parameter error (PC)
+ 27-Paper output abnormality (cover open detection disabled)
+ 28-Check paper type
+ 29-When printing RFID labels in non-RFID mode
+ 30-Density setting not supported
+ 31-Unsupported print mode
+ 32-Label material setting failed (material setting timed out or failed, does not block normal printing)
+ 33-Unsupported label material setting (blocks normal printing)
+ 34-Printer abnormality (blocks normal printing)
+ 35-Cutter abnormality (T2 blocks normal printing)
+ 36-Out of paper (T2 no paper loaded)
+ 37-Printer abnormality (T2 cannot be recovered by command, requires manual printer operation)
+ 50-Illegal label
+ 51-Illegal ribbon and label
  */
 + (void)getPrintingErrorInfo:(PRINT_INFO)error;
 
 /**
-像素转毫米(会对像素进行处理)。
+Pixel to millimeter (pixels will be processed).
  
- @param   pixel           像素
- @return  绘制参数
+ @param   pixel           Pixel
+ @return  Drawing parameter
  */
 + (CGFloat)pixelToMm:(CGFloat)pixel;
 
 /**
-毫米转像素(会对毫米进行处理)。
+Millimeter to pixel (millimeters will be processed).
 
- @param  mm       毫米
- @return  绘制参数
+ @param  mm       Millimeter
+ @return  Drawing parameter
  */
 + (CGFloat)mmToPixel:(CGFloat)mm;
 
 
 /**
- 生成打印预览图像。
+ Generate print preview image.
  
- 该方法用于生成打印预览图像，根据提供的 JSON 数据以及分辨率和打印倍率参数进行生成。
+ This method is used to generate a print preview image based on the provided JSON data, resolution, and print magnification parameters.
 
- @param generatePrintPreviewImageJson 包含打印信息的 JSON 数据。
- @param displayMultiple 显示倍率，用于指定生成的图像的分辨率。
- @param printMultiple 打印机倍率，用于指定生成的图像的打印倍率。
- @param printPreviewImageType 预览图像类型，通常为固定值 1。
- @param error 用于接收错误信息的 NSError 对象的指针。如果生成预览图像时发生错误，将返回相应的错误信息。
+ @param generatePrintPreviewImageJson JSON data containing print information.
+ @param displayMultiple Display magnification, used to specify the resolution of the generated image.
+ @param printMultiple Printer magnification, used to specify the print magnification of the generated image.
+ @param printPreviewImageType Preview image type, usually a fixed value of 1.
+ @param error Pointer to an NSError object to receive error information. If an error occurs during preview image generation, corresponding error information will be returned.
 
- @return 返回生成的预览图像，如果生成失败则返回 nil。
+ @return Returns the generated preview image, or nil if generation fails.
  */
 + (UIImage *)generatePrintPreviewImage:(NSString*)generatePrintPreviewImageJson displayMultiple:(float)displayMultiple printMultiple:(float)printMultiple printPreviewImageType:(int)printPreviewImageType error:(NSError **)error;
 
 
 /**
- 初始化图像库。
+ Initialize image library.
  
- 该方法用于设置字体文件夹的路径，以供后续的图像处理操作。在进行文本绘制和一维码文字绘制之前，必须先初始化图像库。
+ This method is used to set the path of the font folder for subsequent image processing operations. Before performing text drawing and 1D code text drawing, the image library must be initialized first.
  
- @param fontFamilyPath 字体文件夹的完整路径。
- @param error 用于接收错误信息的 NSError 对象的指针。如果设置字体路径时发生错误，将返回相应的错误信息。
+ @param fontFamilyPath The full path of the font folder.
+ @param error Pointer to an NSError object to receive error information. If an error occurs when setting the font path, corresponding error information will be returned.
  
  @note
- 在进行文本绘制和一维码文字绘制之前，请确保先调用此方法以初始化图像库。初始化失败时，将通过 `error` 参数返回错误信息。
+ Before performing text drawing and 1D code text drawing, please ensure that this method is called first to initialize the image library. If initialization fails, error information will be returned through the `error` parameter.
  */
 +(void) initImageProcessing:(NSString *) fontFamilyPath error:(NSError **)error;
 
 /**
- 准备打印任务。
+ Prepare print job.
  
- 该方法用于准备打印任务，设置打印浓度和纸张类型，并在打印完成后通过回调通知结果。
+ This method is used to prepare a print job, set print density and paper type, and notify the result through a callback after printing is complete.
  
- @param blackRules 打印浓度设置。具体值取决于打印机型号，可参考以下规则：
-   - B系列热敏机型（B3S/B21/B203/B1/B31）: 支持范围 1~5，默认值 3。
-   - K系列热敏机型（K3/K3W）: 支持范围 1~5，默认值 3。
-   - D系列热敏机型（D11/D110/D101）: 支持范围 1~3，默认值 2。
-   - B16热敏机型: 支持范围 1~3，默认值 2。
-   - 热转印机型 Z401/B32: 支持范围 1~15，默认值 8。
-   - 热转印机型 P1/P1S: 支持范围 1~5，默认值 3。
-   - 热转印机型 B18: 支持范围 1~3，默认值 2。
-   - B11/B50/T7/T8系列: 0（随打印机设置）、1（最淡）、6（正常）、15（最浓）
+ @param blackRules Print density setting. The specific value depends on the printer model, refer to the following rules:
+   - B series thermal models (B3S/B21/B203/B1/B31): Supports range 1~5, default value 3.
+   - K series thermal models (K3/K3W): Supports range 1~5, default value 3.
+   - D series thermal models (D11/D110/D101): Supports range 1~3, default value 2.
+   - B16 thermal model: Supports range 1~3, default value 2.
+   - Thermal transfer models Z401/B32: Supports range 1~15, default value 8.
+   - Thermal transfer models P1/P1S: Supports range 1~5, default value 3.
+   - Thermal transfer model B18: Supports range 1~3, default value 2.
+   - B11/B50/T7/T8 series: 0 (follow printer settings), 1 (lightest), 6 (normal), 15 (darkest)
  
- @param paperStyle 纸张类型设置。具体值取决于打印机型号，可参考以下规则：
+ @param paperStyle Paper type setting. The specific value depends on the printer model, refer to the following rules:
    - B3S/B21/B203/B1/B16/D11/D110/D101/Z401/B32/K3/K3W/P1/P1S:
-     1—间隙纸
-     2—黑标纸
-     3—连续纸
-     4—定孔纸
-     5—透明纸
-     6—标牌
+     1—Gap paper
+     2—Black mark paper
+     3—Continuous paper
+     4—Perforated paper
+     5—Transparent paper
+     6—Label
  
-   - B11/B50/T7/T8系列:
-     0：连续纸
-     1：定位孔 (如果不支持定位孔，则自动切换至间隙纸)
-     2：间隙纸
-     3：黑标纸
+   - B11/B50/T7/T8 series:
+     0: Continuous paper
+     1: Positioning hole (if positioning hole is not supported, automatically switch to gap paper)
+     2: Gap paper
+     3: Black mark paper
  
- @param completion 打印完成回调块。当打印任务完成时，将调用此回调并传递打印结果。
+ @param completion Print completion callback block. When the print job is complete, this callback will be called and the print result will be passed.
  */
 + (void)startJob:(int)blackRules
   withPaperStyle:(int)paperStyle
   withCompletion:(DidPrinted_Block)completion;
 
 /**
- 打印二值化后的图片 bitmap 数据。
+ Print binarized image bitmap data.
  
- 该方法用于将二值化的图像数据提交到打印机上，可设置打印份数、是否有虚线以及打印完成后的回调。
+ This method is used to submit binarized image data to the printer. You can set the number of copies, whether there is a dashed line, and a callback after printing is complete.
 
- @param data 包含二值化图像数据的 NSData 对象。
- @param width 图像宽度。
- @param height 图像高度。
- @param count 打印份数。
- @param hasDashLine 是否包含虚线。
- @param completion 打印完成回调块。当打印任务完成时，将调用此回调并传递打印结果。
+ @param data NSData object containing binarized image data.
+ @param width Image width.
+ @param height Image height.
+ @param count Number of print copies.
+ @param hasDashLine Whether to include a dashed line.
+ @param completion Print completion callback block. When the print job is complete, this callback will be called and the print result will be passed.
  */
 + (void)print:(nonnull NSData *)data
     dataWidth:(unsigned int)width
@@ -454,17 +454,17 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
  withComplete:(DidPrinted_Block)completion;
 
 /**
- 打印二值化后的图片 bitmap 数据。
+ Print binarized image bitmap data.
  
- 该方法用于将二值化的图像数据提交到打印机上，可设置打印份数、EPC 码、是否有虚线以及打印完成后的回调。
+ This method is used to submit binarized image data to the printer. You can set the number of copies, EPC code, whether there is a dashed line, and a callback after printing is complete.
 
- @param data 包含二值化图像数据的 NSData 对象。
- @param width 图像宽度。
- @param height 图像高度。
- @param count 打印份数。
- @param epcCode EPC 码（可选）。
- @param hasDashLine 是否包含虚线。
- @param completion 打印完成回调块。当打印任务完成时，将调用此回调并传递打印结果。
+ @param data NSData object containing binarized image data.
+ @param width Image width.
+ @param height Image height.
+ @param count Number of print copies.
+ @param epcCode EPC code (optional).
+ @param hasDashLine Whether to include a dashed line.
+ @param completion Print completion callback block. When the print job is complete, this callback will be called and the print result will be passed.
  */
 + (void)print:(nonnull NSData *)data
     dataWidth:(unsigned int)width
@@ -475,75 +475,75 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
  withComplete:(DidPrinted_Block)completion;
 
 /**
- 毫米转像素。
+ Millimeter to pixel.
  
- 该方法用于将毫米单位的长度转换为像素单位，考虑到倍率因子。
+ This method is used to convert length in millimeters to pixels, considering the scaling factor.
 
- @param mm 毫米值。
- @param scaler 倍率因子。
- @return 返回整数，表示转换后的像素值。
+ @param mm Millimeter value.
+ @param scaler Scaling factor.
+ @return Returns an integer representing the converted pixel value.
  */
 + (int) mmToPixel:(float)mm scaler:(float)scaler;
 
 /**
- 像素转毫米。
+ Pixel to millimeter.
  
- 该方法用于将像素单位的长度转换为毫米单位，考虑到倍率因子。
+ This method is used to convert length in pixels to millimeters, considering the scaling factor.
 
- @param pixel 像素值。
- @param scaler 倍率因子。
- @return 返回浮点数，表示转换后的毫米值。
+ @param pixel Pixel value.
+ @param scaler Scaling factor.
+ @return Returns a floating-point number representing the converted millimeter value.
  */
 + (float) pixelToMm:(int)pixel scaler:(float)scaler;
 
 /**
- 获取倍率。
+ Get display multiple.
  
- 该方法用于计算倍率，将屏幕物理尺寸与屏幕分辨率结合起来。
+ This method is used to calculate the display multiple, combining the screen physical size with the screen resolution.
 
- @param templatePhysical 屏幕物理尺寸（毫米）。
- @param screenDisplaySize 屏幕分辨率宽度（像素）。
- @return 返回浮点数，表示计算得到的倍率。
+ @param templatePhysical Screen physical size (millimeters).
+ @param screenDisplaySize Screen resolution width (pixels).
+ @return Returns a floating-point number representing the calculated display multiple.
  */
 + (float)getDisplayMultiple:(float)templatePhysical templateDisplayWidth:(int)screenDisplaySize;
 
 
 /**
- 毫米转英寸。
+ Millimeter to inch.
  
- 该方法用于将毫米单位的长度转换为英寸单位。
+ This method is used to convert length in millimeters to inches.
 
- @param mm 毫米值。
- @return 返回浮点数，表示转换后的英寸值。
+ @param mm Millimeter value.
+ @return Returns a floating-point number representing the converted inch value.
  */
 +(float) mmToInch:(float) mm;
 
 /**
- 英寸转毫米。
+ Inch to millimeter.
  
- 该方法用于将英寸单位的长度转换为毫米单位。
+ This method is used to convert length in inches to millimeters.
 
- @param inch 英寸值。
- @return 返回浮点数，表示转换后的毫米值。
+ @param inch Inch value.
+ @return Returns a floating-point number representing the converted millimeter value.
  */
 +(float) inchToMm:(float) inch;
 
 
-/// 是否支持RFID写入功能
+/// Whether RFID writing function is supported
 +(BOOL)isSupportWriteRFID;
 
 
 /**
- 初始化绘制画板。
+ Initialize drawing board.
  
- 该方法用于初始化一个绘制画板，指定宽度、高度、水平偏移、竖直偏移、旋转角度以及可选的字体路径。
+ This method is used to initialize a drawing board, specifying width, height, horizontal offset, vertical offset, rotation angle, and optional font path.
 
- @param width 画板的宽度（毫米）。
- @param height 画板的高度（毫米）。
- @param horizontalShift 画板的水平偏移（毫米）（暂不生效）。
- @param verticalShift 画板的竖直偏移（毫米）（暂不生效）。
- @param rotate 画板的旋转角度，通常为 0。
- @param font 字体名称（暂不生效）
+ @param width Width of the drawing board (millimeters).
+ @param height Height of the drawing board (millimeters).
+ @param horizontalShift Horizontal offset of the drawing board (millimeters) (not yet effective).
+ @param verticalShift Vertical offset of the drawing board (millimeters) (not yet effective).
+ @param rotate Rotation angle of the drawing board, usually 0.
+ @param font Font name (not yet effective)
  */
 +(void)initDrawingBoard:(float)width
              withHeight:(float)height
@@ -554,16 +554,16 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
 
 
 /**
- 初始化绘制画板。
+ Initialize drawing board.
  
- 该方法用于初始化一个绘制画板，指定宽度、高度、水平偏移、竖直偏移、旋转角度以及可选的字体路径。
+ This method is used to initialize a drawing board, specifying width, height, horizontal offset, vertical offset, rotation angle, and optional font path.
 
- @param width 画板的宽度（毫米）。
- @param height 画板的高度（毫米）。
- @param horizontalShift 画板的水平偏移（毫米）（暂不生效）。
- @param verticalShift 画板的竖直偏移（毫米）（暂不生效）。
- @param rotate 画板的旋转角度，通常为 0。
- @param fonts 字体数组
+ @param width Width of the drawing board (millimeters).
+ @param height Height of the drawing board (millimeters).
+ @param horizontalShift Horizontal offset of the drawing board (millimeters) (not yet effective).
+ @param verticalShift Vertical offset of the drawing board (millimeters) (not yet effective).
+ @param rotate Rotation angle of the drawing board, usually 0.
+ @param fonts Font array
  */
 +(void)initDrawingBoard:(float)width
              withHeight:(float)height
@@ -573,29 +573,29 @@ typedef void (^JCSDKCACHE_STATE)        (JCSDKCacheStatus status)       ;
               fontArray:(NSArray<NSString*> *)fonts;
 
 /**
- 绘制文本。
+ Draw text.
  
- 该方法用于在绘制画板上绘制文本，可以指定文本的位置、尺寸、内容、字体、字体大小、旋转角度、对齐方式、换行方式以及字体样式。
+ This method is used to draw text on the drawing board. You can specify the text's position, size, content, font, font size, rotation angle, alignment, line wrapping, and font style.
 
- @param x 水平起点（毫米）。
- @param y 竖直起点（毫米）。
- @param w 宽度（毫米）。
- @param h 高度（毫米）。
- @param text 文本内容。
- @param fontFamily 字体名称。
- @param fontSize 字体大小。
- @param rotate 旋转角度。
- @param textAlignHorizonral 文本水平对齐方式：0（左对齐）、1（居中对齐）、2（右对齐）。
- @param textAlignVertical 文本竖直对齐方式：0（顶对齐）、1（垂直居中）、2（底对齐）。
- @param lineMode 换行方式。
- @param letterSpacing 字体间隔。
- @param lineSpacing 行间隔。
- @param fontStyles 字体样式，为包含布尔值的数组，通常包括斜体、加粗、下划线、删除下划线。
+ @param x Horizontal starting point (millimeters).
+ @param y Vertical starting point (millimeters).
+ @param w Width (millimeters).
+ @param h Height (millimeters).
+ @param text Text content.
+ @param fontFamily Font name.
+ @param fontSize Font size.
+ @param rotate Rotation angle.
+ @param textAlignHorizonral Horizontal text alignment: 0 (left), 1 (center), 2 (right).
+ @param textAlignVertical Vertical text alignment: 0 (top), 1 (middle), 2 (bottom).
+ @param lineMode Line wrapping mode.
+ @param letterSpacing Letter spacing.
+ @param lineSpacing Line spacing.
+ @param fontStyles Font styles, an array of boolean values, usually including italic, bold, underline, strikethrough.
 
- @return 返回布尔值，表示文本是否成功绘制。
+ @return Returns a boolean value indicating whether the text was successfully drawn.
  
  @note
- 文本绘制之前，请确保先调用此方法以初始化图像库。
+ Before drawing text, please ensure that this method is called first to initialize the image library.
  */
 +(BOOL)drawLableText:(float)x
                withY:(float)y
@@ -614,18 +614,18 @@ withTextAlignVertical:(int)textAlignVertical
 
 
 /**
- 绘制一维码。
+ Draw 1D barcode.
  
- 该方法用于在绘制画板上绘制一维码（条码），可以指定条码的位置、尺寸、内容、字号、旋转角度、类型以及相关文本信息。
+ This method is used to draw a 1D barcode on the drawing board. You can specify the barcode's position, size, content, font size, rotation angle, type, and related text information.
 
- @param x 水平坐标（毫米）。
- @param y 垂直坐标（毫米）。
- @param w 条码宽度（毫米）。
- @param h 条码高度（毫米）（含文本高度）。
- @param text 条码内容。
- @param fontSize 文本字号。
- @param rotate 旋转角度，仅支持 0, 90, 180, 270。
- @param codeType 一维码类型：
+ @param x Horizontal coordinate (millimeters).
+ @param y Vertical coordinate (millimeters).
+ @param w Barcode width (millimeters).
+ @param h Barcode height (millimeters) (including text height).
+ @param text Barcode content.
+ @param fontSize Text font size.
+ @param rotate Rotation angle, supports only 0, 90, 180, 270.
+ @param codeType 1D barcode type:
    - 20: CODE128
    - 21: UPC-A
    - 22: UPC-E
@@ -635,16 +635,16 @@ withTextAlignVertical:(int)textAlignVertical
    - 26: CODE39
    - 27: CODEBAR
    - 28: ITF25
- @param textHeight 文本高度（毫米）。
- @param textPosition 一维码文字识别码显示位置：
-   - 0: 下方显示
-   - 1: 上方显示
-   - 2: 不显示
+ @param textHeight Text height (millimeters).
+ @param textPosition Display position of the human-readable text for the 1D barcode:
+   - 0: Display below
+   - 1: Display above
+   - 2: Do not display
 
- @return 返回布尔值，表示条码是否成功绘制。
+ @return Returns a boolean value indicating whether the barcode was successfully drawn.
  
  @note
- 一维码绘制之前，请确保先调用此方法以初始化图像库。
+ Before drawing a 1D barcode, please ensure that this method is called first to initialize the image library.
  */
 +(BOOL)drawLableBarCode:(float)x
                   withY:(float)y
@@ -659,23 +659,23 @@ withTextAlignVertical:(int)textAlignVertical
 
 
 /**
- 绘制二维码。
+ Draw QR code.
  
- 该方法用于在绘制画板上绘制二维码，可以指定二维码的位置、尺寸、内容、旋转角度、类型。
+ This method is used to draw a QR code on the drawing board. You can specify the QR code's position, size, content, rotation angle, and type.
 
- @param x 水平坐标（毫米）。
- @param y 垂直坐标（毫米）。
- @param w 二维码宽度（毫米）。
- @param h 二维码高度（毫米）。
- @param text 二维码内容。
- @param rotate 旋转角度，仅支持 0, 90, 180, 270。
- @param codeType 二维码类型：
+ @param x Horizontal coordinate (millimeters).
+ @param y Vertical coordinate (millimeters).
+ @param w QR code width (millimeters).
+ @param h QR code height (millimeters).
+ @param text QR code content.
+ @param rotate Rotation angle, supports only 0, 90, 180, 270.
+ @param codeType QR code type:
    - 31: QR_CODE
    - 32: PDF417
    - 33: DATA_MATRIX
    - 34: AZTEC
 
- @return 返回布尔值，表示二维码是否成功绘制。
+ @return Returns a boolean value indicating whether the QR code was successfully drawn.
  */
 +(BOOL)drawLableQrCode:(float)x
                  withY:(float)y
@@ -687,21 +687,21 @@ withTextAlignVertical:(int)textAlignVertical
 
 
 /**
- 绘制线条。
+ Draw line.
  
- 该方法用于在绘制画板上绘制线条，可以指定线条的位置、尺寸、旋转角度、类型以及虚线的宽度和样式。
+ This method is used to draw a line on the drawing board. You can specify the line's position, size, rotation angle, type, and the width and style of dashed lines.
 
- @param x 水平坐标（毫米）。
- @param y 垂直坐标（毫米）。
- @param w 线条宽度（毫米）。
- @param h 线条高度（毫米）。
- @param rotate 旋转角度，仅支持 0, 90, 180, 270。
- @param lineType 线条类型：
-   - 1: 实线
-   - 2: 虚线类型，虚实比例 1:1。
- @param dashWidth 虚线的宽度，为包含两个数字的数组，表示实线段长度和空线段长度。
+ @param x Horizontal coordinate (millimeters).
+ @param y Vertical coordinate (millimeters).
+ @param w Line width (millimeters).
+ @param h Line height (millimeters).
+ @param rotate Rotation angle, supports only 0, 90, 180, 270.
+ @param lineType Line type:
+   - 1: Solid line
+   - 2: Dashed line type, dash-space ratio 1:1.
+ @param dashWidth Width of the dashed line, an array of two numbers representing the length of the solid segment and the length of the empty segment.
 
- @return 返回布尔值，表示线条是否成功绘制。
+ @return Returns a boolean value indicating whether the line was successfully drawn.
  */
 +(BOOL)DrawLableLine:(float)x
                withY:(float)y
@@ -713,24 +713,24 @@ withTextAlignVertical:(int)textAlignVertical
 
 
 /**
- 绘制形状。
+ Draw shape.
  
- 该方法用于在绘制画板上绘制形状，可以指定形状的位置、尺寸、线条宽度、圆角、旋转角度、类型以及线条的样式。
+ This method is used to draw a shape on the drawing board. You can specify the shape's position, size, line width, corner radius, rotation angle, type, and line style.
 
- @param x 水平坐标（毫米）。
- @param y 垂直坐标（毫米）。
- @param w 形状宽度（毫米）。
- @param h 形状高度（毫米）。
- @param lineWidth 线条宽度（毫米）。
- @param cornerRadius 图像圆角（毫米）。
- @param rotate 旋转角度，仅支持 0, 90, 180, 270。
- @param graphType 图形类型。
- @param lineType 线条类型：
-   - 1: 实线
-   - 2: 虚线类型，虚实比例 1:1。
- @param dashWidth 线条的宽度，为包含两个数字的数组，表示实线段长度和空线段长度。
+ @param x Horizontal coordinate (millimeters).
+ @param y Vertical coordinate (millimeters).
+ @param w Shape width (millimeters).
+ @param h Shape height (millimeters).
+ @param lineWidth Line width (millimeters).
+ @param cornerRadius Image corner radius (millimeters).
+ @param rotate Rotation angle, supports only 0, 90, 180, 270.
+ @param graphType Graphic type.
+ @param lineType Line type:
+   - 1: Solid line
+   - 2: Dashed line type, dash-space ratio 1:1.
+ @param dashWidth Line width, an array of two numbers representing the length of the solid segment and the length of the empty segment.
 
- @return 返回布尔值，表示形状是否成功绘制。
+ @return Returns a boolean value indicating whether the shape was successfully drawn.
  */
 +(BOOL)DrawLableGraph:(float)x
                 withY:(float)y
@@ -745,20 +745,20 @@ withTextAlignVertical:(int)textAlignVertical
 
 
 /**
- 绘制图片。
+ Draw image.
  
- 该方法用于在绘制画板上绘制图片，可以指定图片的位置、尺寸、图像数据、旋转角度、处理算法以及阈值。
+ This method is used to draw an image on the drawing board. You can specify the image's position, size, image data, rotation angle, processing algorithm, and threshold.
 
- @param x 水平坐标（毫米）。
- @param y 垂直坐标（毫米）。
- @param w 图像宽度（毫米）。
- @param h 图像高度（毫米）。
- @param imageData 图像的 Base64 数据。
- @param rotate 旋转角度，仅支持 0, 90, 180, 270。
- @param imageProcessingType 图像处理算法（默认1）。
- @param imageProcessingValue 阈值（默认127）。
+ @param x Horizontal coordinate (millimeters).
+ @param y Vertical coordinate (millimeters).
+ @param w Image width (millimeters).
+ @param h Image height (millimeters).
+ @param imageData Base64 data of the image.
+ @param rotate Rotation angle, supports only 0, 90, 180, 270.
+ @param imageProcessingType Image processing algorithm (default 1).
+ @param imageProcessingValue Threshold (default 127).
 
- @return 返回布尔值，表示图片是否成功绘制。
+ @return Returns a boolean value indicating whether the image was successfully drawn.
  */
 +(BOOL)DrawLableImage:(float)x
                 withY:(float)y
@@ -770,36 +770,36 @@ withImageProcessingType:(int)imageProcessingType
 withImageProcessingValue:(float)imageProcessingValue;
 
 /**
- 生成标签数据的 JSON 字符串。
+ Generate JSON string for label data.
 
- 该方法用于生成标签数据的 JSON 字符串，以便提交给打印机进行打印。
+ This method is used to generate a JSON string for label data to be submitted to the printer for printing.
 
- @return 返回生成的标签数据的 JSON 字符串。
+ @return Returns the generated JSON string for label data.
  */
 +(NSString *)GenerateLableJson;
 
 
 /**
- 获取标签预览图像。
+ Get label preview image.
 
- 该方法用于生成标签的预览图像，可以指定显示倍率和错误码。
+ This method is used to generate a preview image of the label. You can specify the display magnification and error code.
 
- @param displayScale 显示倍率。
- @param error 返回的错误码，如果成功，error 为 nil。
+ @param displayScale Display magnification.
+ @param error Returned error code. If successful, error is nil.
 
- @return 返回生成的标签预览图像。
+ @return Returns the generated label preview image.
  */
 +(UIImage *)generateImagePreviewImage:(float)displayScale error:(NSError **)error;
 
 
 /**
- 开始打印标签任务。
+ Start printing label job.
 
- 该方法用于提交打印数据，指定打印份数和回调处理。
+ This method is used to submit print data, specify the number of copies, and handle callbacks.
 
- @param printData 打印数据，通常为标签的 JSON 字符串。
- @param onePageNumbers 用于指定当前页的打印份数。例如，如果你需要打印3页，第一页打印3份，第二页打印2份，第三页打印5份，那么在3次提交数据时，onePageNumbers值分别应为3，2，5。
- @param completion 打印完成回调，用于处理打印任务是否成功的结果。
+ @param printData Print data, usually a JSON string of the label.
+ @param onePageNumbers Used to specify the number of print copies for the current page. For example, if you need to print 3 pages, with the first page printed 3 times, the second page 2 times, and the third page 5 times, then when submitting data 3 times, the onePageNumbers values should be 3, 2, and 5 respectively.
+ @param completion Print completion callback, used to handle the result of whether the print job was successful.
 
  */
 + (void)commit:(NSString *)printData
@@ -807,14 +807,14 @@ withOnePageNumbers:(int)onePageNumbers
   withComplete:(DidPrinted_Block)completion;
 
 /**
- 开始打印标签任务。
+ Start printing label job.
 
- 该方法用于提交打印数据，指定打印份数、写入RFID数据和回调处理。
+ This method is used to submit print data, specify the number of copies, RFID data to write, and handle callbacks.
 
- @param printData 打印数据，通常为标签的 JSON 字符串。
- @param onePageNumbers 用于指定当前页的打印份数。例如，如果你需要打印3页，第一页打印3份，第二页打印2份，第三页打印5份，那么在3次提交数据时，onePageNumbers值分别应为3，2，5。
- @param epcCode 要写入的RFID数据。可以为nil，表示不写入RFID数据。（仅支持B32R机型）
- @param completion 打印完成回调，用于处理打印任务是否成功的结果。
+ @param printData Print data, usually a JSON string of the label.
+ @param onePageNumbers Used to specify the number of print copies for the current page. For example, if you need to print 3 pages, with the first page printed 3 times, the second page 2 times, and the third page 5 times, then when submitting data 3 times, the onePageNumbers values should be 3, 2, and 5 respectively.
+ @param epcCode RFID data to write. Can be nil, indicating no RFID data will be written. (Only supports B32R model)
+ @param completion Print completion callback, used to handle the result of whether the print job was successful.
  */
 + (void)commit:(NSString *)printData
 withOnePageNumbers:(int)onePageNumbers

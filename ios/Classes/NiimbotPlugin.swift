@@ -3,12 +3,45 @@ import Flutter
 import NiimbotObjCSDK
 import UIKit
 
-public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
+// MARK: - Protocol Definitions
+protocol BluetoothStateHandling {
+  func handleBluetoothState(_ state: CBManagerState, result: FlutterResult?)
+}
+
+protocol PrinterOperations {
+  func connect(to deviceName: String, result: @escaping FlutterResult)
+  func disconnect(result: @escaping FlutterResult)
+  func send(printData: PrintData, result: @escaping FlutterResult)
+}
+
+// MARK: - PrintData Structure
+struct PrintData {
+  let bytes: Data
+  let width: Double
+  let height: Double
+  let imagePixelWidth: Int
+  let imagePixelHeight: Int
+  let density: Int
+  let labelType: Int
+  let quantity: Int
+  let rotate: Bool
+  let invertColor: Bool
+  let imageProcessingType: Int
+  let imageProcessingValue: Float
+}
+
+// MARK: - Main Plugin Class
+public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler, CBCentralManagerDelegate
+{
   private var channel: FlutterMethodChannel!
   private var eventChannel: FlutterEventChannel!
   private var eventSink: FlutterEventSink?
   private var pluginLogger: PluginLogger?
   private var connectedPrinterName: String?
+  private var centralManager: CBCentralManager?
+  private var pendingScanResult: FlutterResult?
+  private var pendingResult: FlutterResult?
+  private var isBluetoothEnabled = false
 
   // --- Logging Helper ---
   private func log(_ message: String, level: String = "info", props: [String: Any]? = nil) {
@@ -59,31 +92,115 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     instance.eventChannel = eventChannel
     eventChannel.setStreamHandler(instance)
 
-    // SDK Initialization: initImageProcessing
-    // Ensure "SourceHanSans-Regular.ttc" (or your chosen font) is in ios/Assets/
-    // and s.resources in podspec points to it.
-    // The Bundle(for: NiimbotPlugin.self) ensures we are looking in the plugin's bundle.
+    instance.centralManager = CBCentralManager(delegate: instance, queue: nil)
+
+    // SDK Initialization: initImageProcessing - Attempt with ZT025.ttf as we have it
+    // Use direct print() for these critical initial logs to ensure they appear in Xcode console
+    print("[NiimbotPlugin_REGISTER] Attempting JCAPI.initImageProcessing with ZT025.ttf...")
     if let fontPath = Bundle(for: NiimbotPlugin.self).path(
-      forResource: "SourceHanSans-Regular", ofType: "ttc")
+      forResource: "ZT025", ofType: "ttf")  // Use ZT025.ttf
     {
       var initError: NSError?
       JCAPI.initImageProcessing(fontPath, error: &initError)
       if let error = initError {
-        // Use instance.log once logger is initialized in onListen, or print for now
-        instance.log(
-          "SDK initImageProcessing error: {errorDescription}", level: "error",
-          props: ["errorDescription": error.localizedDescription])
+        print(
+          "[NiimbotPlugin_REGISTER:CRITICAL] SDK initImageProcessing error (with ZT025.ttf): \(error.localizedDescription)"
+        )
       } else {
-        instance.log("SDK initImageProcessing successful.")
+        print("[NiimbotPlugin_REGISTER:INFO] SDK initImageProcessing successful (with ZT025.ttf).")
       }
     } else {
-      instance.log(
-        "Default font for SDK (SourceHanSans-Regular.ttc) not found in plugin bundle.",
-        level: "error")
+      print(
+        "[NiimbotPlugin_REGISTER:CRITICAL] Font ZT025.ttf (for initImageProcessing) NOT FOUND in plugin bundle. SDK may be unstable."
+      )
     }
 
+    // Font loading from FONT.json is now handled in handleSend before initDrawingBoard
+
     registrar.addMethodCallDelegate(instance, channel: methodChannel)
-    instance.log("Plugin registration complete (logger will init in onListen).")
+    // Use print for this final registration log too, to see it relative to initImageProcessing
+    print(
+      "[NiimbotPlugin_REGISTER] Plugin registration complete. Logger will initialize in onListen.")
+  }
+
+  // Method to load fonts from FONT.json into Documents/font directory
+  // Returns an array of font filenames that were successfully processed/found in Documents/font
+  private func loadCustomFontsFromBundle() -> [String] {
+    log("Attempting to load custom fonts from plugin bundle...")
+    var successfullyProcessedFontFiles: [String] = []
+
+    guard
+      let fontJsonPath = Bundle(for: NiimbotPlugin.self).path(forResource: "FONT", ofType: "json")
+    else {
+      log("FONT.json not found in plugin bundle.", level: "warn")
+      return successfullyProcessedFontFiles
+    }
+
+    do {
+      let fontJsonData = try Data(contentsOf: URL(fileURLWithPath: fontJsonPath))
+      guard
+        let jsonResult = try JSONSerialization.jsonObject(
+          with: fontJsonData, options: .mutableContainers) as? [String: Any],
+        let fontsArray = jsonResult["fonts"] as? [[String: String]]
+      else {
+        log("Failed to parse FONT.json or 'fonts' array not found.", level: "error")
+        return successfullyProcessedFontFiles
+      }
+
+      let fileManager = FileManager.default
+      guard
+        let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
+          .first
+      else {
+        log("Could not get documents directory.", level: "error")
+        return successfullyProcessedFontFiles
+      }
+
+      let fontDestinationParentDir = documentsDirectory.appendingPathComponent("font")
+
+      if !fileManager.fileExists(atPath: fontDestinationParentDir.path) {
+        try fileManager.createDirectory(
+          at: fontDestinationParentDir, withIntermediateDirectories: true, attributes: nil)
+        log("Created Documents/font directory.")
+      }
+
+      for fontInfo in fontsArray {
+        guard let fontFileName = fontInfo["url"], let fontCode = fontInfo["fontCode"] else {
+          log(
+            "Missing 'url' or 'fontCode' in FONT.json entry.", level: "warn",
+            props: ["entry": fontInfo])
+          continue
+        }
+
+        guard
+          let sourceFontPath = Bundle(for: NiimbotPlugin.self).path(
+            forResource: fontFileName, ofType: nil)  // Use fontFileName directly as it includes extension
+        else {
+          log(
+            "Font file '\(fontFileName)' not found in plugin bundle for code '\(fontCode)'.",
+            level: "warn")
+          continue
+        }
+
+        let destinationFontPath = fontDestinationParentDir.appendingPathComponent(fontFileName)
+
+        if !fileManager.fileExists(atPath: destinationFontPath.path) {
+          try fileManager.copyItem(
+            at: URL(fileURLWithPath: sourceFontPath), to: destinationFontPath)
+          log("Copied '\(fontFileName)' to Documents/font/ for code '\(fontCode)'.")
+        }
+        // Add to list regardless of whether it was copied now or existed before
+        successfullyProcessedFontFiles.append(fontFileName)
+      }
+      log(
+        "Custom font loading process completed. Available in Documents/font: \(successfullyProcessedFontFiles)"
+      )
+    } catch {
+      log(
+        "Error during custom font loading: \(error.localizedDescription)", level: "error",
+        props: ["errorObj": error])
+    }
+    return successfullyProcessedFontFiles
   }
 
   // MARK: - FlutterStreamHandler Methods
@@ -178,18 +295,19 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   }
 
   private func handleIsBluetoothEnabled(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    // Use a temporary CBCentralManager to check state. Requires CoreBluetooth import.
-    // Note: This is synchronous and might not be ideal if called frequently,
-    // but for a one-off check it's generally acceptable.
-    // We can't store the manager easily without becoming its delegate and handling its lifecycle.
-    let tempManager = CBCentralManager(
-      delegate: nil, queue: nil,
-      options: [CBCentralManagerOptionShowPowerAlertKey: NSNumber(value: false)])
-    let isEnabled = tempManager.state == .poweredOn
-    log(
-      "Bluetooth enabled check: {isEnabled}, state: {stateRawValue}",
-      props: ["isEnabled": isEnabled, "stateRawValue": tempManager.state.rawValue])
-    result(isEnabled)
+    if let centralManager = centralManager {
+      switch centralManager.state {
+      case .poweredOn:
+        result(true)
+      case .poweredOff, .unauthorized, .unsupported, .resetting:
+        result(false)
+      default:
+        pendingResult = result
+      }
+    } else {
+      centralManager = CBCentralManager(delegate: self, queue: nil)
+      pendingResult = result
+    }
   }
 
   private func handleIsConnected(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -207,26 +325,58 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   }
 
   private func handleScanForPeripherals(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    log("Starting scan for peripherals using SDK...")
+    guard let centralManager = centralManager else {
+      result(
+        FlutterError(
+          code: "BLUETOOTH_NOT_INITIALIZED",
+          message: "Bluetooth manager not initialized",
+          details: nil))
+      return
+    }
 
-    // Before scanning, ensure BT permission is granted. The SDK might handle this, but good practice.
-    // Also check if Bluetooth is powered on.
-    let tempManager = CBCentralManager(
-      delegate: nil, queue: nil,
-      options: [CBCentralManagerOptionShowPowerAlertKey: NSNumber(value: false)])
-    guard tempManager.state == .poweredOn else {
+    switch centralManager.state {
+    case .poweredOn:
+      _performScan(result: result)
+    case .poweredOff:
+      result(
+        FlutterError(
+          code: "BLUETOOTH_OFF",
+          message: "Bluetooth is not powered on",
+          details: nil))
+    case .unauthorized:
+      result(
+        FlutterError(
+          code: "BLUETOOTH_UNAUTHORIZED",
+          message: "Bluetooth permission not granted",
+          details: nil))
+    case .unsupported:
+      result(
+        FlutterError(
+          code: "BLUETOOTH_UNSUPPORTED",
+          message: "Bluetooth is not supported on this device",
+          details: nil))
+    default:
+      result(
+        FlutterError(
+          code: "BLUETOOTH_STATE_UNKNOWN",
+          message: "Bluetooth state is unknown",
+          details: nil))
+    }
+  }
+
+  private func _performScan(result: @escaping FlutterResult) {
+    guard let manager = centralManager, manager.state == .poweredOn else {
       let errorMsg = "Bluetooth is not powered on."
       log(errorMsg, level: "error")
       result(FlutterError(code: "BLUETOOTH_OFF", message: errorMsg, details: nil))
       return
     }
 
-    guard
-      CBCentralManager.authorization == .allowedAlways
-    else {
+    guard CBCentralManager.authorization == .allowedAlways else {
       let errorMsg = "Bluetooth permission not granted for scanning."
       log(errorMsg, level: "error")
-      result(FlutterError(code: "BLUETOOTH_PERMISSION_DENIED", message: errorMsg, details: nil))
+      result(
+        FlutterError(code: "BLUETOOTH_PERMISSION_DENIED", message: errorMsg, details: nil))
       return
     }
 
@@ -234,7 +384,12 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
       guard let self = self else { return }
       if let names = scannedPrinters as? [String] {
         let deviceList = names.map { name_in -> [String: String] in
-          return ["name": name_in, "address": name_in]
+          // Check if the name looks like a UUID (36 characters with hyphens)
+          let isUUID = name_in.count == 36 && name_in.contains("-")
+          return [
+            "name": isUUID ? "" : name_in,
+            "address": name_in,
+          ]
         }
         self.log("SDK Scan found: {count} devices.", props: ["count": deviceList.count])
         result(deviceList)
@@ -319,7 +474,11 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   }
 
   private func handleSend(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    log("Starting handleSend with SDK drawing methods...")
+    log("Starting handleSend - REPLICATING NATIVE DEMO (TEXT & QR) - SIMPLIFIED FONT HANDLING...")
+
+    // Ensure fonts are loaded/copied to Documents/font and get the list of font filenames
+    // let availableFontFiles = loadCustomFontsFromBundle()  // <<<<<<< TEMPORARILY COMMENTED OUT
+    // log("Available font files in Documents/font after load attempt: \(availableFontFiles)")
 
     guard JCAPI.isConnectingState() == 1 || JCAPI.isConnectingState() == 2 else {
       log("Printer not connected for send operation.", level: "error")
@@ -328,150 +487,152 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     }
 
     guard let args = call.arguments as? [String: Any],
-      let bytesFlutter = args["bytes"] as? FlutterStandardTypedData,
-      let widthNum = args["width"] as? NSNumber,
-      let heightNum = args["height"] as? NSNumber,
-      let imagePixelWidthNum = args["imagePixelWidth"] as? NSNumber,
-      let imagePixelHeightNum = args["imagePixelHeight"] as? NSNumber
+      let density = (args["density"] as? NSNumber)?.intValue,
+      let paperStyle = (args["labelType"] as? NSNumber)?.intValue,
+      let quantity = (args["quantity"] as? NSNumber)?.intValue
     else {
       log(
-        "Invalid arguments for send. Ensure bytes, width (mm), height (mm), imagePixelWidth, imagePixelHeight are provided and are numbers.",
-        level: "error",
-        props: ["argsReceived": args]
-      )
+        "Invalid/missing arguments for send (density, labelType, quantity needed).", level: "error",
+        props: ["argsReceived": call.arguments])
       result(
         FlutterError(
-          code: "INVALID_ARGUMENT",
-          message: "Invalid arguments for send. Check types and presence.", details: nil))
+          code: "INVALID_ARGUMENT", message: "Missing density, labelType, or quantity.",
+          details: nil))
       return
     }
 
-    let widthMillimeters = widthNum.doubleValue
-    let heightMillimeters = heightNum.doubleValue
-    let imagePixelWidth = imagePixelWidthNum.intValue
-    let imagePixelHeight = imagePixelHeightNum.intValue
+    // --- Parameters from the successful native demo log ---
+    let boardWidth: Float = 50.0
+    let boardHeight: Float = 30.0
+    let boardRotate: Int32 = 0
 
-    let imageDataBytes = bytesFlutter.data
+    // Text element from demo
+    let textX: Float = 7.5
+    let textY: Float = 5.0
+    let textWidth: Float = 40.5
+    let textHeight: Float = 6.5
+    let textRotate: Int32 = 0
+    let textValue: String = "F金 银花 开植物 饮料 门"  // From demo
+    let textFontFamily: String = "ZT025"  // From demo, ensure this font is available
+    let textFontSize: Float = 3.5
+    let textAlignHorizontal: Int32 = 0  // 0: Left
+    let textAlignVertical: Int32 = 1  // 1: Center
+    let textLineMode: Int32 = 1
+    let textLetterSpacing: Float = 0.0
+    let textLineSpacing: Float = 1.0
+    let textFontStyles: [NSNumber] = [
+      NSNumber(value: 0), NSNumber(value: 0), NSNumber(value: 0), NSNumber(value: 0),
+    ]
 
-    let blackRules = (args["density"] as? NSNumber)?.intValue ?? 3
-    let paperStyle = (args["labelType"] as? NSNumber)?.intValue ?? 1
-    let quantity = (args["quantity"] as? NSNumber)?.intValue ?? 1
-    let performRotate = (args["rotate"] as? NSNumber)?.boolValue ?? false
-    let performInvert = (args["invertColor"] as? NSNumber)?.boolValue ?? false
-
-    let imageProcessingType = (args["imageProcessingType"] as? NSNumber)?.intValue ?? 1
-    let imageProcessingValue = (args["imageProcessingValue"] as? NSNumber)?.floatValue ?? 127.0
+    // QR Code element from demo
+    let qrX: Float = 3.0
+    let qrY: Float = 12.0
+    let qrWidth: Float = 10.0
+    let qrHeight: Float = 10.0
+    let qrRotate: Int32 = 0
+    let qrValue: String = "123456"  // From demo
+    let qrCodeType: Int32 = 31  // 31: QR_CODE
+    // --- End parameters from demo ---
 
     log(
-      "Send params: LabelElementWidthMM={widthMm}, LabelElementHeightMM={heightMm}, ImagePixelWidth={imgPxW}, ImagePixelHeight={imgPxH}, Density={density}, LabelType={labelType}, Quantity={quantity}, Rotate={rotate}, Invert={invert}, imageProcessingType={imgProcType}, imageProcessingValue={imgProcVal}",
+      String(
+        format: "DEMO REPLICATION - Board: %.1fx%.1f, Rotate:%d. Density:%d, LabelType:%d, Qty:%d",
+        boardWidth, boardHeight, boardRotate, density, paperStyle, quantity),
       props: [
-        "widthMm": widthMillimeters,
-        "heightMm": heightMillimeters,
-        "imgPxW": imagePixelWidth,
-        "imgPxH": imagePixelHeight,
-        "density": blackRules,
-        "labelType": paperStyle,
-        "quantity": quantity,
-        "rotate": performRotate,
-        "invert": performInvert,
-        "imgProcType": imageProcessingType,
-        "imgProcVal": imageProcessingValue,
+        "textValue": textValue,
+        "qrValue": qrValue,
       ]
     )
 
-    guard
-      var uiImage = createImageFromBytes(  // Make uiImage mutable
-        bytes: imageDataBytes, width: imagePixelWidth, height: imagePixelHeight)
-    else {
-      log("Could not create UIImage from provided bytes.", level: "error")
-      result(
-        FlutterError(
-          code: "IMAGE_CREATION_FAILED", message: "Could not create UIImage from bytes",
-          details: nil))
-      return
-    }
-
-    // Handle inversion if requested
-    if performInvert {
-      if let invertedImage = self.invertImageColors(image: uiImage) {
-        uiImage = invertedImage
-        log("Image colors inverted successfully.")
-      } else {
-        log("Failed to invert image colors. Proceeding with original image.", level: "warn")
-        // Optionally, one could choose to fail here if inversion is critical:
-        // result(FlutterError(code: "IMAGE_INVERSION_FAILED", message: "Could not invert image colors", details: nil))
-        // return
-      }
-    }
-
-    // Convert UIImage to PNG Base64 string for DrawLableImage
-    guard let pngData = uiImage.pngData(), !pngData.isEmpty else {
-      log("Could not get PNG data from UIImage.", level: "error")
-      result(
-        FlutterError(
-          code: "IMAGE_CONVERSION_FAILED", message: "Could not get PNG data from UIImage",
-          details: nil))
-      return
-    }
-    let base64ImageData = pngData.base64EncodedString()
-    if base64ImageData.isEmpty {
-      log("Base64 image data string is empty.", level: "error")
-      result(
-        FlutterError(
-          code: "IMAGE_CONVERSION_FAILED", message: "Base64 image data string is empty",
-          details: nil))
-      return
-    }
-
-    log("Image converted to Base64, size: {size} chars.", props: ["size": base64ImageData.count])
-
-    // Determine rotation angle for SDK (0 or 90 degrees)
-    let rotationAngleForSDK: Int32 = performRotate ? 90 : 0
-    log("Rotation angle for SDK: {angle} degrees", props: ["angle": rotationAngleForSDK])
-
-    // SDK Printing Sequence:
-    log(
-      "Calling SDK: startJob (density: {density}, paperStyle: {paperStyle})",
-      props: ["density": blackRules, "paperStyle": paperStyle])
-    JCAPI.startJob(Int32(blackRules), withPaperStyle: Int32(paperStyle)) {
+    log("Calling SDK: startJob (density: \(density), paperStyle: \(paperStyle))")
+    JCAPI.startJob(Int32(density), withPaperStyle: Int32(paperStyle)) {
       [weak self] startSuccess in
       guard let self = self else { return }
       if startSuccess {
         self.log("SDK: startJob successful. Initializing drawing board...")
 
-        // Initialize drawing board - dimensions should match the label or desired print area in mm
-        // For simplicity, using the passed width/height, assuming they are for the entire label.
-        // The image will be placed at (0,0) on this board and scaled to fit widthMillimeters, heightMillimeters
+        // Initialize drawing board based on demo parameters, using the loaded font files
         JCAPI.initDrawingBoard(
-          Float(widthMillimeters), withHeight: Float(heightMillimeters), withHorizontalShift: 0,
-          withVerticalShift: 0, rotate: 0, fontArray: [])  // Board rotation is 0, image rotation is separate
+          boardWidth,
+          withHeight: boardHeight,
+          withHorizontalShift: 0,
+          withVerticalShift: 0,
+          rotate: boardRotate,
+          fontArray: []  // <<<<<<< TRYING WITH EMPTY ARRAY (OR NIL IF SDK/COMPILER PREFERS)
+        )
         self.log(
-          "SDK: Drawing board initialized. Drawing image... WidthMM: {widthMm}, HeightMM: {heightMm}",
-          props: ["widthMm": widthMillimeters, "heightMm": heightMillimeters])
+          "SDK: Drawing board initialized (W:\(boardWidth), H:\(boardHeight), FontArray: EMPTY). Drawing text and QR code..."
+        )
 
-        // Draw the image onto the board.
-        // x, y, w, h for DrawLableImage are in mm on the drawing board.
-        // We'll draw the image to fill the specified width/height in mm.
-        let drawSuccess = JCAPI.drawLableImage(
-          0, withY: 0, withWidth: Float(widthMillimeters), withHeight: Float(heightMillimeters),
-          withImageData: base64ImageData,
-          withRotate: rotationAngleForSDK,  // Use the determined rotation angle
-          withImageProcessingType: Int32(imageProcessingType),
-          withImageProcessingValue: imageProcessingValue)
+        // 1. Draw Text Element - Enhanced Logging
+        self.log(
+          "Preparing to call drawLableText with parameters:",
+          props: [
+            "x": textX,
+            "y": textY,
+            "width": textWidth,
+            "height": textHeight,
+            "text": textValue,
+            "fontFamily": textFontFamily,
+            "fontSize": textFontSize,
+            "rotate": textRotate,
+            "textAlignHorizontal": textAlignHorizontal,
+            "textAlignVertical": textAlignVertical,
+            "lineMode": textLineMode,
+            "letterSpacing": textLetterSpacing,
+            "lineSpacing": textLineSpacing,
+            "fontStyle (count)": textFontStyles.count,  // Log count to verify array structure
+          ])
 
-        if !drawSuccess {
+        let textDrawSuccess = JCAPI.drawLableText(
+          textX,
+          withY: textY,
+          withWidth: textWidth,
+          withHeight: textHeight,
+          with: textValue,
+          withFontFamily: textFontFamily,
+          withFontSize: textFontSize,
+          withRotate: textRotate,
+          withTextAlignHorizonral: textAlignHorizontal,
+          withTextAlignVertical: textAlignVertical,
+          withLineMode: textLineMode,
+          withLetterSpacing: textLetterSpacing,
+          withLineSpacing: textLineSpacing,
+          withFontStyle: textFontStyles
+        )
+
+        if !textDrawSuccess {
           self.log(
-            "SDK: DrawLableImage failed. ImageProcessingType: {type}, Value: {value}",
-            level: "error", props: ["type": imageProcessingType, "value": imageProcessingValue])
+            "SDK: drawLableText FAILED.", level: "error",
+            props: ["text": textValue, "font": textFontFamily])
           result(
             FlutterError(
-              code: "DRAW_IMAGE_FAILED", message: "SDK: DrawLableImage failed", details: nil))
-          // It might be good to call endJob here if startJob was successful but drawing failed.
-          // JCAPI.endPrint { _ in } // Or cancelJob
+              code: "DRAW_TEXT_FAILED", message: "SDK: drawLableText failed", details: nil))
           return
         }
-        self.log("SDK: DrawLableImage successful. Generating JSON...")
+        self.log("SDK: drawLableText successful for demo text.")
 
+        // 2. Draw QR Code Element
+        let qrDrawSuccess = JCAPI.drawLableQrCode(
+          qrX,
+          withY: qrY,
+          withWidth: qrWidth,
+          withHeight: qrHeight,
+          with: qrValue,
+          withRotate: qrRotate,
+          withCodeType: qrCodeType
+        )
+
+        if !qrDrawSuccess {
+          self.log("SDK: drawLableQrCode FAILED.", level: "error", props: ["qrContent": qrValue])
+          result(
+            FlutterError(
+              code: "DRAW_QR_FAILED", message: "SDK: drawLableQrCode failed", details: nil))
+          return
+        }
+        self.log("SDK: drawLableQrCode successful for demo QR.")
+
+        // 3. Generate JSON and Print
         guard let jsonPrintData = JCAPI.generateLableJson(), !jsonPrintData.isEmpty else {
           self.log("SDK: Failed to generate JSON print data or JSON is empty.", level: "error")
           result(
@@ -480,57 +641,32 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
           )
           return
         }
-        self.log(
-          "SDK: JSON generated. Size: {size}. Calling commit...",
-          props: ["size": jsonPrintData.count])
+        self.log("SDK: JSON generated (Size: \(jsonPrintData.count)). Committing print job...")
 
         JCAPI.commit(jsonPrintData, withOnePageNumbers: Int32(quantity)) { commitSuccess in
           if commitSuccess {
-            self.log(
-              "SDK: commit command successful for {quantity} page(s). Will monitor via getPrintingCountInfo and then call endPrint.",
-              props: ["quantity": quantity]
-            )
-            // Simplified: Assume endPrint is called after a delay or count info.
-            // This needs robust handling as before.
-            var printCheckAttempts = 0
-            var timer: Timer?
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
-              guard let self = self else {
-                t.invalidate()
-                return
-              }
-              printCheckAttempts += 1
-              if printCheckAttempts >= 5 {
-                t.invalidate()
-                self.log(
-                  "Placeholder for print completion check timed out after {attempts} attempts. Calling endPrint...",
-                  props: ["attempts": printCheckAttempts]
-                )
-                JCAPI.endPrint { endSuccess in
-                  if endSuccess {
-                    self.log("SDK: endPrint successful.")
-                    result(true)
-                  } else {
-                    self.log("SDK: endPrint failed.", level: "error")
-                    result(
-                      FlutterError(
-                        code: "PRINT_END_FAILED", message: "SDK: Failed to end print job",
-                        details: nil))
-                  }
-                }
+            self.log("SDK: commit successful for \(quantity) page(s).")
+            JCAPI.endPrint { endSuccess in
+              if endSuccess {
+                self.log("SDK: endPrint successful for demo replication.")
+                result(true)
+              } else {
+                self.log("SDK: endPrint FAILED for demo replication.", level: "error")
+                result(
+                  FlutterError(
+                    code: "PRINT_END_FAILED", message: "SDK: endPrint failed for demo replication",
+                    details: nil))
               }
             }
-            RunLoop.main.add(timer!, forMode: .common)
-
           } else {
-            self.log("SDK: commit command failed.", level: "error")
+            self.log("SDK: commit FAILED.", level: "error")
             result(
               FlutterError(
                 code: "PRINT_CMD_FAILED", message: "SDK: Commit command failed", details: nil))
           }
         }
       } else {
-        self.log("SDK: startJob failed.", level: "error")
+        self.log("SDK: startJob FAILED.", level: "error")
         result(
           FlutterError(
             code: "PRINT_START_FAILED", message: "SDK: Failed to start print job", details: nil))
@@ -643,5 +779,26 @@ public class NiimbotPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     guard let outputCGImage = context.createCGImage(outputCIImage, from: outputCIImage.extent)
     else { return nil }
     return UIImage(cgImage: outputCGImage, scale: image.scale, orientation: image.imageOrientation)
+  }
+
+  // MARK: - CBCentralManagerDelegate
+
+  public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+    switch central.state {
+    case .poweredOn:
+      isBluetoothEnabled = true
+      if let result = pendingResult {
+        result(true)
+        pendingResult = nil
+      }
+    case .poweredOff, .unauthorized, .unsupported, .resetting:
+      isBluetoothEnabled = false
+      if let result = pendingResult {
+        result(false)
+        pendingResult = nil
+      }
+    default:
+      break
+    }
   }
 }

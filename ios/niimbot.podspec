@@ -28,8 +28,8 @@ A Flutter plugin to interact with Niimbot label printers using the native iOS SD
   s.frameworks = 'AVFoundation', 'CoreMedia', 'CoreBluetooth', 'CoreAudio'
   s.libraries = 'bz2.1.0', 'iconv.2', 'c++'
 
-  # Resources (e.g., for fonts) - Assuming SourceHanSans-Regular.ttc is the chosen font
-  s.resources = 'Assets/SourceHanSans-Regular.ttc'
+  # Resources (e.g., for fonts) - Include all .ttc, .ttf, and .json files from Assets
+  s.resources = ['Assets/*.ttc', 'Assets/*.ttf', 'Assets/*.json']
 
   s.dependency 'Flutter'
   s.platform = :ios, '17.2'
